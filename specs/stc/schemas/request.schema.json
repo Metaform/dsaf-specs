@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Request",
+  "type": "object",
+  "required": [
+    "requestId",
+    "taskId",
+    "kind",
+    "status",
+    "payload"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "./common.schema.json#/definitions/Uuid"
+    },
+    "taskId": {
+      "$ref": "./common.schema.json#/definitions/Uuid"
+    },
+    "kind": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "RECEIVED",
+        "ANSWERED",
+        "DECLINED"
+      ]
+    },
+    "payload": {},
+    "refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "./pointer.schema.json"
+      }
+    },
+    "respondBy": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "response": {
+      "$ref": "#/definitions/Response"
+    },
+    "errors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "./common.schema.json#/definitions/StatusError"
+      }
+    }
+  },
+  "definitions": {
+    "Response": {
+      "type": "object",
+      "required": [
+        "record"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "record": {
+          "allOf": [
+            {
+              "$ref": "./pointer.schema.json"
+            },
+            {
+              "required": [
+                "revision"
+              ]
+            }
+          ]
+        },
+        "supporting": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "./pointer.schema.json"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ANSWERED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "response"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "DECLINED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "errors"
+        ],
+        "not": {
+          "required": [
+            "response"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "RECEIVED"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "response"
+          ]
+        }
+      }
+    }
+  ]
+}

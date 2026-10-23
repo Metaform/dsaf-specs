@@ -1,0 +1,900 @@
+openapi: 3.1.0
+info:
+  title: Structured Task Collaboration API
+  version: 1.0.0
+  description: |
+    HTTP API exposed by every participant under the Structured Task
+    Collaboration (STC) specification. The API is symmetric: both parties to a
+    Task implement it in its entirety. It accepts task creations, serves the
+    participant's own Task Index and files, accepts and serves Task Requests,
+    and receives protocol events.
+
+    A Task is identified by the `taskId` assigned by the Task Owner when the
+    task is opened. A Task Request is identified by the `requestId` assigned by
+    the responder when the request is created. Files are identified by their
+    `fileId` and positioned in their stream by a dense `seq`.
+
+    All endpoints MUST use HTTPS (TLS 1.2 or higher). Authorization mechanisms,
+    including token formats and acquisition, are defined by deployment profiles
+    of the STC specification.
+servers:
+  - url: '{baseUrl}'
+    description: |
+      The implementation-specific base URL, which may include additional
+      context information such as a sub-path that indicates a version.
+    variables:
+      baseUrl:
+        default: https://participant.example.com/stc
+security:
+  - bearerAuth: []
+paths:
+  /tasks:
+    post:
+      summary: Create a Task binding
+      description: |
+        Invoked by the Task Owner on the counterparty to open a Task, carrying
+        the Task object. Creation is idempotent on the `taskId`. A request
+        repeating a (counterparty, `taskId`) pair is treated as the same
+        creation and acknowledged without creating a second binding. A replay
+        matches the bound task on `taskId` and `createdAt` and gets a response
+        identical to the original, `HTTP 201` included. A bound `taskId` with
+        a different `createdAt` is a collision and is rejected with
+        `HTTP 409`. A creation whose `status` is not `OPEN` is rejected with
+        `HTTP 400`. The receiving party may decline a creation it will not
+        participate in. The task is then created in the `DECLINED` state and
+        the response body contains the Task object with `status` `DECLINED`
+        and the reasons for the decline in its `errors` array. Both parties
+        retain the binding. Task metadata is immutable. It is set at creation
+        and never updated.
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/task.schema'
+                - properties:
+                    status:
+                      const: OPEN
+            examples:
+              earlyWarning:
+                summary: Open a task for a quality early warning
+                value:
+                  taskId: 430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17
+                  status: OPEN
+                  createdAt: '2026-10-07T09:00:00Z'
+                  title: 'Early warning: braking component'
+      responses:
+        '201':
+          description: >-
+            The Task binding was created (or already existed). The body
+            contains the Task object. Its `status` is `OPEN`, or `DECLINED`
+            when the receiving party declines the task, with the reasons for
+            the decline in the `errors` array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/task.schema'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}:
+    get:
+      summary: Retrieve a Task
+      description: |
+        Returns the current Task object. The Task Owner serves the
+        authoritative representation, including the current `status`. A Task
+        Participant that missed a `TaskStatus` event polls the owner's
+        endpoint to observe the current state. For a task it does not own, a
+        party responds with `HTTP 404`.
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: The current Task object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/task.schema'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/index:
+    get:
+      summary: Retrieve the Task Index
+      description: |
+        Returns the serving party's Task Index for the task: its own
+        contributions only, grouped by stream, in `seq` order. The index is
+        append-only and is the recovery mechanism of the protocol — it reflects
+        every file the party has published under the task.
+
+        Three forms: full (no query parameters); filtered (`stream`, optionally
+        `fromSeq` for entries with `seq >= fromSeq` — the delta-sync form;
+        `fromSeq` without `stream` is rejected with `HTTP 400`); summary
+        (`summary=true`, streams carry `head` in place of `files`; combined
+        with `fromSeq` it is rejected with `HTTP 400`). A `stream` value the
+        party has not contributed to yields `HTTP 200` with an empty `streams`
+        array.
+      operationId: getTaskIndex
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: stream
+          in: query
+          required: false
+          description: A stream `type` URI; limits the response to that stream.
+          schema:
+            type: string
+            format: uri
+        - name: fromSeq
+          in: query
+          required: false
+          description: Lowest `seq` to include. Requires `stream`.
+          schema:
+            type: integer
+            minimum: 0
+        - name: summary
+          in: query
+          required: false
+          description: When `true`, streams carry `head` (highest `seq`) in place of `files`.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: The serving party's Task Index for the task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/task.index.schema'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/files/{fileId}:
+    get:
+      summary: Retrieve a file
+      description: |
+        Returns the content of a file published by the serving party under the
+        task. The response `Content-Type` is the media type the profile
+        declares for the stream type's file format. The endpoint SHOULD
+        support HTTP range requests (files are immutable, so resumption is
+        always coherent); supporting servers include `Accept-Ranges: bytes`,
+        and a ranged request may be answered `200` with the full body by a
+        server that does not.
+      operationId: getFile
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: fileId
+          in: path
+          required: true
+          description: The file's `fileId` from the Task Index.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The file content.
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+        '307':
+          description: >-
+            Redirect to an HTTPS URL from which the client retrieves the file,
+            for example a presigned URL to an object store. The URL should be
+            minted for the individual request and short-lived. Clients must
+            follow the redirect and must not reuse or share the URL.
+          headers:
+            Location:
+              required: true
+              description: The HTTPS URL serving the file content.
+              schema:
+                type: string
+                format: uri
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/requests:
+    post:
+      summary: Create a Task Request
+      description: |
+        Invoked by the requesting party to submit a demand that obligates a
+        response. Creation is idempotent on the body's `messageId`: a request
+        repeating a (counterparty, `messageId`) pair returns the
+        already-created Task Request in its current state (a retry arriving
+        after the responder answered returns `ANSWERED`), with a response
+        identical in form to the original — `HTTP 201` with the same
+        `Location`. The response carries the Request
+        representation with the assigned `requestId` and the current `status`,
+        and a `Location` header pointing at the created request. A request is
+        created even when the responder declines it immediately (`status` is
+        then `DECLINED`); the synchronous `201` is the undeniable receipt of
+        the demand. A structurally valid request whose `kind` the responder
+        does not implement is likewise created and declined, with the
+        unsupported kind URI in the error's `specifier` — never rejected with
+        `HTTP 400`, which is reserved for bodies violating this request schema.
+
+        A request referencing an unknown `taskId` is rejected with `HTTP 404`;
+        a request submitted after the task is `CLOSED` is rejected with
+        `HTTP 409`.
+      operationId: createRequest
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/request.creation.schema'
+            examples:
+              settlementClaim:
+                summary: Submit a settlement claim with pinned evidence
+                value:
+                  messageId: b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a
+                  kind: https://w3id.org/example/requests/settlement-claim/1
+                  payload:
+                    claimedAmount:
+                      value: 418.5
+                      currency: EUR
+                  refs:
+                    - author: did:web:oem.example.com
+                      type: https://w3id.org/example/schemas/claim-data/3
+                      record: b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e
+                      revision: 1
+                      seq: 1
+                  respondBy: '2026-12-01T00:00:00Z'
+      responses:
+        '201':
+          description: The Task Request was created.
+          headers:
+            Location:
+              description: The relative URL of the created request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/request.schema'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/requests/{requestId}:
+    get:
+      summary: Retrieve a Task Request
+      description: |
+        Returns the current state of a Task Request. The requester polls it to
+        observe progress when it missed pushed `RequestStatus` events. The
+        endpoint reports the same `status` as the pushed events. For a request
+        it is not the responder of, a party responds with `HTTP 404`.
+      operationId: getRequest
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: requestId
+          in: path
+          required: true
+          description: The `requestId` assigned when the request was created.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The current state of the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/request.schema'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /notifications:
+    post:
+      summary: Submit protocol events
+      description: |
+        Accepts the events defined by the STC specification — `TaskStatus`,
+        `FilesAppended`, and `RequestStatus` — and profile-defined
+        events, as a single event or a batch. Batches are accepted or rejected
+        as a unit. An event of a type the receiver does not implement is
+        accepted and may be ignored; a batch is never rejected for containing
+        unknown event types. An event whose `source` does not hold the role
+        its type's direction assigns (e.g. a `TaskStatus` not from the Task
+        Owner) is rejected with `HTTP 400`. An event referencing a `taskId`
+        for which the receiver holds no binding is rejected with `HTTP 404`.
+      operationId: postNotifications
+      requestBody:
+        required: true
+        content:
+          application/cloudevents+json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/task.status.event.schema'
+                - $ref: '#/components/schemas/files.appended.event.schema'
+                - $ref: '#/components/schemas/request.status.event.schema'
+                - $ref: '#/components/schemas/event.schema'
+          application/cloudevents-batch+json:
+            schema:
+              type: array
+              minItems: 1
+              items:
+                oneOf:
+                  - $ref: '#/components/schemas/task.status.event.schema'
+                  - $ref: '#/components/schemas/files.appended.event.schema'
+                  - $ref: '#/components/schemas/request.status.event.schema'
+                  - $ref: '#/components/schemas/event.schema'
+      responses:
+        '204':
+          description: The events were accepted; the response body is empty.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: The task's `taskId` (a UUID) assigned by the Task Owner.
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Human-readable error description.
+    Uuid:
+      type: string
+      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+    task.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: Task
+      type: object
+      required:
+        - taskId
+        - status
+        - createdAt
+      additionalProperties: false
+      properties:
+        taskId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum:
+            - OPEN
+            - DECLINED
+            - CLOSED
+        createdAt:
+          type: string
+          format: date-time
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          minLength: 1
+        errors:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/StatusError'
+        closure:
+          type: object
+          required:
+            - closedAt
+          additionalProperties: false
+          properties:
+            closedAt:
+              type: string
+              format: date-time
+            outcome:
+              type: string
+              minLength: 1
+            reason:
+              type: string
+              minLength: 1
+            refs:
+              type: array
+              minItems: 1
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/pointer.schema'
+                  - required:
+                      - revision
+      allOf:
+        - if:
+            properties:
+              status:
+                const: CLOSED
+          then:
+            required:
+              - closure
+            not:
+              required:
+                - errors
+        - if:
+            properties:
+              status:
+                const: DECLINED
+          then:
+            required:
+              - errors
+            not:
+              required:
+                - closure
+        - if:
+            properties:
+              status:
+                const: OPEN
+          then:
+            allOf:
+              - not:
+                  required:
+                    - closure
+              - not:
+                  required:
+                    - errors
+    StreamType:
+      type: string
+      format: uri
+      minLength: 1
+    Seq:
+      type: integer
+      minimum: 0
+    FileEntry:
+      type: object
+      required:
+        - seq
+        - fileId
+        - createdAt
+      additionalProperties: false
+      properties:
+        seq:
+          $ref: '#/components/schemas/Seq'
+        fileId:
+          $ref: '#/components/schemas/Uuid'
+        createdAt:
+          type: string
+          format: date-time
+    StreamFiles:
+      type: object
+      required:
+        - type
+        - files
+      additionalProperties: false
+      properties:
+        type:
+          $ref: '#/components/schemas/StreamType'
+        files:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/FileEntry'
+    StreamHead:
+      type: object
+      required:
+        - type
+        - head
+      additionalProperties: false
+      properties:
+        type:
+          $ref: '#/components/schemas/StreamType'
+        head:
+          $ref: '#/components/schemas/Seq'
+    task.index.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: TaskIndex
+      type: object
+      required:
+        - taskId
+        - streams
+      additionalProperties: false
+      properties:
+        taskId:
+          $ref: '#/components/schemas/Uuid'
+        streams:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/StreamFiles'
+              - $ref: '#/components/schemas/StreamHead'
+    RecordId:
+      type: string
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+    Revision:
+      type: integer
+      minimum: 0
+    pointer.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: Pointer
+      type: object
+      required:
+        - author
+        - type
+        - record
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+          minLength: 1
+        type:
+          $ref: '#/components/schemas/StreamType'
+        record:
+          $ref: '#/components/schemas/RecordId'
+        revision:
+          $ref: '#/components/schemas/Revision'
+        seq:
+          $ref: '#/components/schemas/Seq'
+      if:
+        required:
+          - seq
+      then:
+        required:
+          - revision
+    request.creation.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: RequestCreation
+      type: object
+      required:
+        - messageId
+        - kind
+        - payload
+      additionalProperties: false
+      properties:
+        messageId:
+          $ref: '#/components/schemas/Uuid'
+        kind:
+          type: string
+          format: uri
+          minLength: 1
+        payload: {}
+        refs:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/pointer.schema'
+        respondBy:
+          type: string
+          format: date-time
+    Response:
+      type: object
+      required:
+        - record
+      additionalProperties: false
+      properties:
+        record:
+          allOf:
+            - $ref: '#/components/schemas/pointer.schema'
+            - required:
+                - revision
+        supporting:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/pointer.schema'
+    StatusError:
+      type: object
+      required:
+        - message
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+        specifier:
+          type: string
+          minLength: 1
+    request.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: Request
+      type: object
+      required:
+        - requestId
+        - taskId
+        - kind
+        - status
+        - payload
+      properties:
+        requestId:
+          $ref: '#/components/schemas/Uuid'
+        taskId:
+          $ref: '#/components/schemas/Uuid'
+        kind:
+          type: string
+          format: uri
+          minLength: 1
+        status:
+          type: string
+          enum:
+            - RECEIVED
+            - ANSWERED
+            - DECLINED
+        payload: {}
+        refs:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/pointer.schema'
+        respondBy:
+          type: string
+          format: date-time
+        response:
+          $ref: '#/components/schemas/Response'
+        errors:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/StatusError'
+      allOf:
+        - if:
+            properties:
+              status:
+                const: ANSWERED
+          then:
+            required:
+              - response
+        - if:
+            properties:
+              status:
+                const: DECLINED
+          then:
+            required:
+              - errors
+            not:
+              required:
+                - response
+        - if:
+            properties:
+              status:
+                const: RECEIVED
+          then:
+            not:
+              required:
+                - response
+    event.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: Event
+      type: object
+      required:
+        - specversion
+        - type
+        - source
+        - id
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        type:
+          type: string
+          minLength: 1
+        source:
+          type: string
+          format: uri-reference
+          minLength: 1
+        id:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        time:
+          type: string
+          format: date-time
+        datacontenttype:
+          type: string
+        dataschema:
+          type: string
+          format: uri
+        subject:
+          type: string
+          minLength: 1
+        dataspaceidentifier:
+          type: string
+          minLength: 1
+        data: {}
+        data_base64:
+          type: string
+          contentEncoding: base64
+      not:
+        required:
+          - data
+          - data_base64
+      additionalProperties: true
+    task.status.event.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: TaskStatusEvent
+      allOf:
+        - $ref: '#/components/schemas/event.schema'
+        - type: object
+          required:
+            - subject
+            - data
+          properties:
+            type:
+              const: org.dsaf.stc.TaskStatus.v1
+            data:
+              type: object
+              required:
+                - taskId
+                - status
+              additionalProperties: false
+              properties:
+                taskId:
+                  $ref: '#/components/schemas/Uuid'
+                status:
+                  type: string
+                  enum:
+                    - OPEN
+                    - CLOSED
+                task:
+                  $ref: '#/components/schemas/task.schema'
+                closure:
+                  $ref: '#/components/schemas/task.schema/properties/closure'
+              allOf:
+                - if:
+                    properties:
+                      status:
+                        const: OPEN
+                  then:
+                    required:
+                      - task
+                    not:
+                      required:
+                        - closure
+                - if:
+                    properties:
+                      status:
+                        const: CLOSED
+                  then:
+                    required:
+                      - closure
+                    not:
+                      required:
+                        - task
+    files.appended.event.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: FilesAppendedEvent
+      allOf:
+        - $ref: '#/components/schemas/event.schema'
+        - type: object
+          required:
+            - subject
+            - data
+          properties:
+            type:
+              const: org.dsaf.stc.FilesAppended.v1
+            data:
+              type: object
+              required:
+                - taskId
+                - streams
+              additionalProperties: false
+              properties:
+                taskId:
+                  $ref: '#/components/schemas/Uuid'
+                streams:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/StreamFiles'
+    request.status.event.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: RequestStatusEvent
+      allOf:
+        - $ref: '#/components/schemas/event.schema'
+        - type: object
+          required:
+            - subject
+            - data
+          properties:
+            type:
+              const: org.dsaf.stc.RequestStatus.v1
+            data:
+              type: object
+              required:
+                - taskId
+                - requestId
+                - status
+              additionalProperties: false
+              properties:
+                taskId:
+                  $ref: '#/components/schemas/Uuid'
+                requestId:
+                  $ref: '#/components/schemas/Uuid'
+                status:
+                  type: string
+                  enum:
+                    - ANSWERED
+                    - DECLINED
+                response:
+                  $ref: '#/components/schemas/Response'
+                errors:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/StatusError'
+              allOf:
+                - if:
+                    properties:
+                      status:
+                        const: ANSWERED
+                  then:
+                    required:
+                      - response
+                - if:
+                    properties:
+                      status:
+                        const: DECLINED
+                  then:
+                    required:
+                      - errors
+                    not:
+                      required:
+                        - response
+  responses:
+    BadRequest:
+      description: The request was malformed or failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: The request was not authenticated.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The referenced resource does not exist or is not visible to the caller.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The request conflicts with existing state, for example a `taskId` collision.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer token. The token format and acquisition are defined by deployment
+        profiles of the STC specification.

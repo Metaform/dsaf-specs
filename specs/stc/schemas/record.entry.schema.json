@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RecordEntry",
+  "type": "object",
+  "required": [
+    "recordId",
+    "revision",
+    "marker"
+  ],
+  "properties": {
+    "recordId": {
+      "$ref": "./common.schema.json#/definitions/RecordId"
+    },
+    "revision": {
+      "$ref": "./common.schema.json#/definitions/Revision"
+    },
+    "marker": {
+      "type": "string",
+      "enum": [
+        "ADDED",
+        "UPDATED",
+        "DELETED"
+      ]
+    },
+    "refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "./pointer.schema.json"
+      }
+    },
+    "mediaType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payloadEntry": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "marker": {
+            "const": "ADDED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "revision": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "revision": {
+            "const": 0
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "marker": {
+            "const": "ADDED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "marker": {
+            "const": "DELETED"
+          }
+        }
+      },
+      "then": {
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "refs"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "payloadEntry"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "mediaType"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
