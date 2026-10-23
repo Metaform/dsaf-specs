@@ -40,6 +40,35 @@ The task used throughout: `430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17` (below: `430f56
 The OEM's fleet analytics flag an unusual failure rate in a brake component supplied by the supplier. No
 request/response is needed. Both parties publish data, correlate, and close.
 
+```mermaid
+sequenceDiagram
+    participant OEM
+    participant Supplier
+    OEM->>Supplier: 1. POST /tasks (OPEN)
+    Supplier-->>OEM: 201 Task (OPEN)
+    Note over OEM: 2. Publish complaint file seq 0
+    OEM->>Supplier: 2. POST /notifications FilesAppended (complaint seq 0)
+    Supplier-->>OEM: 204
+    OEM->>Supplier: 3. POST /notifications EarlyWarning
+    Supplier-->>OEM: 204
+    Supplier->>OEM: 4. GET /tasks/{taskId}/index
+    OEM-->>Supplier: 200 complaint stream, seq 0
+    Supplier->>OEM: 4. GET /tasks/{taskId}/files/{fileId}
+    OEM-->>Supplier: 200 parquet bytes
+    Note over Supplier: 5. Publish part-analysis seq 0 and attachment seq 0
+    Supplier->>OEM: 5. POST /notifications FilesAppended (both streams)
+    OEM-->>Supplier: 204
+    Note over OEM: 6. Publish complaint file seq 1
+    OEM-xSupplier: 6. FilesAppended (complaint seq 1) is lost
+    Supplier->>OEM: 7. GET /tasks/{taskId}/index
+    OEM-->>Supplier: 200 complaint stream head at seq 1
+    Supplier->>OEM: 7. GET /tasks/{taskId}/files/{fileId}
+    OEM-->>Supplier: 200 parquet bytes (seq 1)
+    Note over OEM: 8. Transition task to CLOSED
+    OEM->>Supplier: 8. POST /notifications TaskStatus (CLOSED)
+    Supplier-->>OEM: 204
+```
+
 ### 1. OEM opens the task
 
 ```http
@@ -241,6 +270,27 @@ discovers `CLOSED` on its next `GET /tasks/430f56d3-…` against the owner.
 Under the same task, the OEM demands recompense for the repair behind claim-b. A demand needs receipt,
 observable state, and explicit refusal, so it is a Task Request, not a contribution.
 
+```mermaid
+sequenceDiagram
+    participant OEM
+    participant Supplier
+    Note over OEM: 1. invoice-7 and claim-b@1 are already published
+    OEM->>Supplier: 2. POST /tasks/{taskId}/requests (settlement-claim)
+    Supplier-->>OEM: 201 Request (RECEIVED)
+    OEM->>Supplier: 3. GET /tasks/{taskId}/requests/{requestId}
+    Supplier-->>OEM: 200 Request (RECEIVED)
+    Note over Supplier: 4. Publish verification-2041@0 (verification seq 0)
+    Supplier->>OEM: 4. POST /notifications FilesAppended (verification seq 0)
+    OEM-->>Supplier: 204
+    Note over Supplier: 5. Transition RECEIVED to ANSWERED and bind the response pointer
+    Supplier->>OEM: 5. POST /notifications RequestStatus (ANSWERED)
+    OEM-->>Supplier: 204
+    OEM->>Supplier: 6. GET /tasks/{taskId}/index
+    Supplier-->>OEM: 200 verification stream, seq 0
+    OEM->>Supplier: 6. GET /tasks/{taskId}/files/{fileId}
+    Supplier-->>OEM: 200 parquet bytes (verification-2041@0)
+```
+
 ### 1. Supporting evidence is already published
 
 The repair invoice went into the OEM's attachment stream (file seq 0, record `invoice-7` @ revision 0),
@@ -355,6 +405,27 @@ against exactly the record revisions both sides saw.
 
 The OEM formally demands an 8D root cause analysis. The demand is one request. The answer is one record
 that matures through revisions.
+
+```mermaid
+sequenceDiagram
+    participant OEM
+    participant Supplier
+    OEM->>Supplier: 1. POST /tasks/{taskId}/requests (8d-request)
+    Supplier-->>OEM: 201 Request (RECEIVED)
+    Note over Supplier: 2. Publish 8d-77@0 (report-8d seq 0)
+    Supplier->>OEM: 2. POST /notifications FilesAppended (report-8d seq 0)
+    OEM-->>Supplier: 204
+    Supplier->>OEM: 2. POST /notifications RequestStatus (ANSWERED, 8d-77@0)
+    OEM-->>Supplier: 204
+    Note over Supplier: 3. Publish 8d-77@1 (seq 1), then 8d-77@2 (seq 2)
+    Supplier->>OEM: 3. POST /notifications FilesAppended (report-8d seq 1)
+    OEM-->>Supplier: 204
+    Supplier->>OEM: 3. POST /notifications FilesAppended (report-8d seq 2)
+    OEM-->>Supplier: 204
+    Note over OEM: 4. Close the task with closure.refs pinning 8d-77@2
+    OEM->>Supplier: 4. POST /notifications TaskStatus (CLOSED)
+    Supplier-->>OEM: 204
+```
 
 ### 1. OEM submits the 8D demand
 
