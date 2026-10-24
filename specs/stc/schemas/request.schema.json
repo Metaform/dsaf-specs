@@ -7,6 +7,7 @@
     "taskId",
     "kind",
     "status",
+    "changeSeq",
     "payload"
   ],
   "properties": {
@@ -29,6 +30,10 @@
         "DECLINED",
         "CANCELLED"
       ]
+    },
+    "changeSeq": {
+      "type": "integer",
+      "minimum": 0
     },
     "payload": {},
     "refs": {

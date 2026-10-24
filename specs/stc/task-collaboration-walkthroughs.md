@@ -328,6 +328,7 @@ POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
   "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
   "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
   "status": "RECEIVED",
+  "changeSeq": 0,
   "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" }, "repairReference": "RO-2026-88213" },
   "refs": [ "… as submitted …" ],
   "respondBy": "2026-12-01T00:00:00Z"

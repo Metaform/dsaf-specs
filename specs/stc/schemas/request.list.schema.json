@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RequestList",
+  "type": "object",
+  "required": [
+    "taskId",
+    "requests"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "taskId": {
+      "$ref": "./common.schema.json#/definitions/Uuid"
+    },
+    "head": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "requests": {
+      "type": "array",
+      "items": {
+        "$ref": "./request.schema.json"
+      }
+    }
+  }
+}

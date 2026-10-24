@@ -302,7 +302,8 @@ missed any number of events reconstructs completeness by retrieving the counterp
 absent from its own holdings.
 
 Events are hints, never the system of record. No correctness property of this protocol depends on the delivery of
-an event. Every event is recoverable from the [=Task Index=] and the resources it lists.
+an event. Every event is recoverable from the [=Task Index=], the [request listing](#request-listing), and the
+resources they list.
 
 ### Task Requests
 
@@ -319,8 +320,10 @@ before the responder answers or declines it (see [Request Cancellation](#request
 A [=Task Request=] is identified by a `requestId` assigned by the receiving party (the responder) when the request is
 created, and is scoped to its [=Task=]. The `requestId` is the correlation handle for the interaction.
 
-A request is created by the requesting party, the requester, via [Request Creation](#request-creation). Once a
-request is created, its existence and state are observable via [Request Retrieval](#request-retrieval).
+A request is created by the requesting party, the requester, via [Request Creation](#request-creation), alone or
+together with other requests via [Batch Request Creation](#batch-request-creation). Once a request is created, its
+existence and state are observable via [Request Retrieval](#request-retrieval) and
+[Request Listing](#request-listing).
 
 #### Request State Machine
 
@@ -497,6 +500,10 @@ synchronously in the creation response is not pushed. The intermediate `RECEIVED
 reported synchronously in the creation response and is observable at any time via
 [Request Retrieval](#request-retrieval). `CANCELLED` is never pushed, because the requester sets it.
 
+When many requests reach a terminal state together, for example because one [=File=] contains the responses to all
+of them, the responder SHOULD send their `RequestStatus` events in [[dcm]] batches. A requester that missed events
+recovers the request states via [Request Listing](#request-listing).
+
 The `subject` attribute of the event MUST be set to the `requestId`.
 
 The `data` identifies the request and reports its terminal state:
@@ -601,6 +608,7 @@ applicable code from this table applies:
 | `400 Bad Request` | The body or query violates this specification's schemas or rules, including an event whose `source` is not its type's defined sender. |
 | `404 Not Found`   | The referenced resource is unknown or not visible to the caller, such as an unbound `taskId` or an unknown `fileId` or `requestId`. Also used in place of `401`/`403` where existence must not be revealed (see [Security and Authorization](#security-and-authorization)). |
 | `409 Conflict`    | The request conflicts with existing state, such as a `taskId` collision, a request submitted under a task in a terminal state, or a cancellation of a request that is `ANSWERED` or `DECLINED`. |
+| `413 Content Too Large` | A batch contains more requests than the responder accepts per batch (see [Batch Request Creation](#batch-request-creation)). |
 
 Every `4xx` error response contains a JSON body of the form `{ "message": "<human-readable description>" }`. The
 `message` is diagnostic and intended for developers and logs. Machine-readable discrimination is expressed by the
@@ -755,11 +763,68 @@ The following is a non-normative example of a request creation body (a settlemen
 }
 ```
 
+### Batch Request Creation
+
+The batch endpoint creates several [=Task Requests=] under one task in one call. It is a transport optimization. Each
+request in a batch is created, identified, and answered exactly as if it were submitted alone via
+[Request Creation](#request-creation). Each has its own `requestId`, state, and outcome, so one request in a batch can
+be answered while another is declined.
+
+The body contains `requests`, an array of request creation bodies as defined in [Request Creation](#request-creation).
+The batch is validated as a unit. A batch MUST be rejected with `HTTP 400 Bad Request` when any element violates the
+request creation schema or when two elements contain the same `messageId`. A batch under an unknown `taskId` MUST be
+rejected with `HTTP 404 Not Found`. A batch under a task in a terminal state MUST be rejected with
+`HTTP 409 Conflict`. A structurally valid element whose `kind` the responder does not implement is created and
+declined per [Request Creation](#request-creation). It does not invalidate the batch.
+
+The response MUST be `HTTP 200 OK` with a body containing `requests`, the [Request objects](#request-object) of the
+batch in the order of the submitted elements. Each Request object reflects the request's current state.
+
+A batch is not a transaction. Idempotency applies to each element on its (counterparty, `messageId`) pair. A
+requester that receives no response retries the batch unchanged. Elements created by an earlier attempt are returned
+in their current state and are not created again. An element that repeats the `messageId` of a request submitted
+earlier, alone or in another batch, is a replay of that request.
+
+A responder MAY limit the number of requests per batch. It MUST accept batches of at least 100 requests. A batch
+that exceeds the responder's limit MUST be rejected with `HTTP 413 Content Too Large`. The requester then submits the
+requests in smaller batches.
+
+|              |                                                                                                       |
+|--------------|-----------------------------------------------------------------------------------------------------------|
+| **Schema**   | [JSON Schema](./schemas/request.batch.creation.schema.json)                                            |
+| **Required** | - `requests`: An array of request creation bodies (at least one), each as defined in [Request Creation](#request-creation). |
+
+|                 |                                                                                 |
+|-----------------|-------------------------------------------------------------------------------------|
+| **HTTP Method** | `POST`                                                                          |
+| **URL Path**    | `/tasks/:taskId/requests/batch`                                                 |
+| **Request**     | The batch defined above                                                         |
+| **Response**    | `HTTP 200` with a [Request Batch object](#request-batch-object) OR `HTTP 4xx Client Error` |
+
+The following is a non-normative example of a batch body with two demands:
+
+```json
+{
+  "requests": [
+    {
+      "messageId": "0f4e2a1b-6c3d-4e5f-8a7b-9c0d1e2f3a4b",
+      "kind": "https://w3id.org/example/requests/part-demand/1",
+      "payload": { "productId": "X-1001" }
+    },
+    {
+      "messageId": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+      "kind": "https://w3id.org/example/requests/part-demand/1",
+      "payload": { "productId": "Y-2002" }
+    }
+  ]
+}
+```
+
 ### Request Retrieval
 
 The request retrieval endpoint returns the current state of a [=Task Request=]. The requester polls it to observe
-progress when it missed pushed `RequestStatus` events. The endpoint MUST report the same `status` as the pushed
-events.
+progress when it missed pushed `RequestStatus` events. To synchronize the states of many requests, the requester uses
+[Request Listing](#request-listing). The endpoint MUST report the same `status` as the pushed events.
 
 If the `requestId` is unknown, the responder MUST respond with `HTTP 404 Not Found`. For a request it is not the
 responder of, a party MUST respond with `HTTP 404 Not Found`.
@@ -769,6 +834,47 @@ responder of, a party MUST respond with `HTTP 404 Not Found`.
 | **HTTP Method** | `GET`                                                                           |
 | **URL Path**    | `/tasks/:taskId/requests/:requestId`                                            |
 | **Response**    | `HTTP 200` with a [Request object](#request-object) OR `HTTP 4xx Client Error`  |
+
+### Request Listing
+
+The request listing endpoint returns the [=Task Requests=] under the task that the serving party is the responder
+of. These are the requests the caller submitted. The listing is the recovery mechanism for request states, as the
+[=Task Index=] is for [=Files=]. A requester that missed any number of `RequestStatus` events synchronizes all request
+states with it and does not need to poll each request.
+
+The responder records a change of a request at its creation and at its transition to a terminal state, including
+`CANCELLED`. A creation that reports a terminal state directly is one change. Each change receives a `changeSeq`.
+The `changeSeq` is an integer that starts at `0` for the first change the responder records under the task and
+increases by `1` with each further change under the task. A request's `changeSeq` is the number of its latest
+change, and every [Request object](#request-object) contains it. Because a request that changed again holds only its
+latest number, the `changeSeq` values in a listing have gaps.
+
+The endpoint supports the following query parameters, which MAY be combined:
+
+- `fromChangeSeq`: Only requests whose `changeSeq` is greater than or equal to the given value. This is the
+  delta-synchronization form.
+- `status`: Only requests in the given state.
+- `limit`: The maximum number of requests to return. MUST be at least `1`.
+
+The response lists the matching requests in ascending `changeSeq` order. It contains `head`, the highest
+`changeSeq` the responder has assigned under the task, regardless of the filters. `head` is absent when no request
+exists under the task. The responder MAY return fewer requests than match, for example to cap the page size. It MUST
+then return the matching requests with the lowest `changeSeq` values. The requester retrieves the next page with
+`fromChangeSeq` set to the last returned `changeSeq` plus `1`. The listing is complete when a page is empty or its
+last `changeSeq` equals `head`.
+
+A request that changes while a requester pages through the listing receives a higher `changeSeq` and appears again
+on a later page. A requester can therefore receive a request twice, but never misses a change. Request states only
+move forward (see [Request State Machine](#request-state-machine)), so the later entry replaces the earlier one.
+
+If the `taskId` is unknown, the endpoint MUST respond with `HTTP 404 Not Found`.
+
+|                 |                                                                                 |
+|-----------------|-------------------------------------------------------------------------------------|
+| **HTTP Method** | `GET`                                                                           |
+| **URL Path**    | `/tasks/:taskId/requests`                                                       |
+| **Query**       | `fromChangeSeq` *(optional)*: lowest `changeSeq` to include. `status` *(optional)*: a request state. `limit` *(optional)*: maximum number of requests |
+| **Response**    | `HTTP 200` with a [Request List object](#request-list-object) OR `HTTP 4xx Client Error` |
 
 ### Request Cancellation
 
@@ -894,6 +1000,7 @@ The Request object is the representation of a [=Task Request=]:
 |              | - `taskId`: The task the request belongs to.                                                           |
 |              | - `kind`: The request kind URI (see [Request Creation](#request-creation)).                            |
 |              | - `status`: The request's current state: one of `RECEIVED`, `ANSWERED`, `DECLINED`, `CANCELLED`.       |
+|              | - `changeSeq`: The number of the request's latest change (see [Request Listing](#request-listing)).    |
 |              | - `payload`: The request payload as submitted.                                                         |
 | **Optional** | - `refs`: The [=Pointers=] as submitted.                                                               |
 |              | - `respondBy`: As submitted.                                                                           |
@@ -908,6 +1015,7 @@ The following is a non-normative example of an `ANSWERED` request:
   "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
   "kind": "https://w3id.org/example/requests/settlement-claim/1",
   "status": "ANSWERED",
+  "changeSeq": 7,
   "payload": {
     "claimedAmount": { "value": 418.50, "currency": "EUR" }
   },
@@ -922,6 +1030,52 @@ The following is a non-normative example of an `ANSWERED` request:
       "record": "2041fa1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b", "revision": 0, "seq": 0
     }
   }
+}
+```
+
+### Request Batch Object
+
+The Request Batch object is the response to [Batch Request Creation](#batch-request-creation):
+
+|              |                                                                                                       |
+|--------------|-----------------------------------------------------------------------------------------------------------|
+| **Schema**   | [JSON Schema](./schemas/request.batch.schema.json)                                                     |
+| **Required** | - `requests`: The [Request objects](#request-object) of the batch, in the order of the submitted elements. |
+
+### Request List Object
+
+The Request List object is the response to [Request Listing](#request-listing):
+
+|              |                                                                                                       |
+|--------------|-----------------------------------------------------------------------------------------------------------|
+| **Schema**   | [JSON Schema](./schemas/request.list.schema.json)                                                      |
+| **Required** | - `taskId`: The task the requests belong to.                                                           |
+|              | - `requests`: The matching [Request objects](#request-object) in ascending `changeSeq` order. Empty if none match. |
+| **Optional** | - `head`: The highest `changeSeq` the responder has assigned under the task. Absent when no request exists under the task. |
+
+The following is a non-normative example of a page of `ANSWERED` requests:
+
+```json
+{
+  "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
+  "head": 9,
+  "requests": [
+    {
+      "requestId": "8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
+      "kind": "https://w3id.org/example/requests/settlement-claim/1",
+      "status": "ANSWERED",
+      "changeSeq": 7,
+      "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" } },
+      "response": {
+        "record": {
+          "author": "did:web:supplier.example.com",
+          "type": "https://w3id.org/example/schemas/claim-verification/1",
+          "record": "2041fa1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b", "revision": 0, "seq": 0
+        }
+      }
+    }
+  ]
 }
 ```
 

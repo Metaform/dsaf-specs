@@ -6,8 +6,8 @@ info:
     HTTP API exposed by every participant under the Structured Task
     Collaboration (STC) specification. The API is symmetric: both parties to a
     Task implement it in its entirety. It accepts task creations, serves the
-    participant's own Task Index and files, accepts, serves, and cancels Task
-    Requests, and receives protocol events.
+    participant's own Task Index and files, accepts, serves, lists, and
+    cancels Task Requests, and receives protocol events.
 
     A Task is identified by the `taskId` assigned by the Task Owner when the
     task is opened. A Task Request is identified by the `requestId` assigned by
@@ -278,6 +278,132 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      summary: List Task Requests
+      description: |
+        Returns the Task Requests under the task that the serving party is the
+        responder of, which are the requests the caller submitted. The listing
+        is the recovery mechanism for request states. A requester that missed
+        `RequestStatus` events synchronizes all request states with it.
+
+        Every change of a request (its creation and its transition to a
+        terminal state, including `CANCELLED`) receives the next `changeSeq`
+        under the task. A request's `changeSeq` is the number of its latest
+        change. Requests are listed in ascending `changeSeq` order. `head` is
+        the highest `changeSeq` assigned under the task, regardless of the
+        filters, and is absent when no request exists.
+
+        The responder may return fewer requests than match. It then returns
+        the matching requests with the lowest `changeSeq` values. The next
+        page is requested with `fromChangeSeq` set to the last returned
+        `changeSeq` plus 1. The listing is complete when a page is empty or
+        its last `changeSeq` equals `head`.
+      operationId: listRequests
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: fromChangeSeq
+          in: query
+          required: false
+          description: Lowest `changeSeq` to include.
+          schema:
+            type: integer
+            minimum: 0
+        - name: status
+          in: query
+          required: false
+          description: Only requests in this state.
+          schema:
+            type: string
+            enum:
+              - RECEIVED
+              - ANSWERED
+              - DECLINED
+              - CANCELLED
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of requests to return.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: The matching requests in ascending `changeSeq` order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/request.list.schema'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/requests/batch:
+    post:
+      summary: Create Task Requests in a batch
+      description: |
+        Creates several Task Requests under one task in one call. Each element
+        is created, identified, and answered exactly as if it were submitted
+        alone via `createRequest`, with its own `requestId`, state, and
+        outcome. Idempotency applies to each element on its
+        (counterparty, `messageId`) pair.
+
+        The batch is validated as a unit. It is rejected with `HTTP 400` when
+        any element violates the request creation schema or when two elements
+        contain the same `messageId`. An element whose `kind` the responder
+        does not implement is created and declined and does not invalidate the
+        batch. A batch under an unknown `taskId` is rejected with `HTTP 404`,
+        and under a task in a terminal state with `HTTP 409`.
+
+        A batch is not a transaction. A requester that receives no response
+        retries the batch unchanged. The responder accepts batches of at least
+        100 requests and rejects a batch above its limit with `HTTP 413`.
+      operationId: createRequestBatch
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/request.batch.creation.schema'
+            examples:
+              demands:
+                summary: Submit two demands in one batch
+                value:
+                  requests:
+                    - messageId: 0f4e2a1b-6c3d-4e5f-8a7b-9c0d1e2f3a4b
+                      kind: https://w3id.org/example/requests/part-demand/1
+                      payload:
+                        productId: X-1001
+                    - messageId: 5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d
+                      kind: https://w3id.org/example/requests/part-demand/1
+                      payload:
+                        productId: Y-2002
+      responses:
+        '200':
+          description: |
+            The Request objects of the batch, in the order of the submitted
+            elements, each in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/request.batch.schema'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /tasks/{taskId}/requests/{requestId}:
@@ -668,6 +794,7 @@ components:
         - taskId
         - kind
         - status
+        - changeSeq
         - payload
       properties:
         requestId:
@@ -685,6 +812,9 @@ components:
             - ANSWERED
             - DECLINED
             - CANCELLED
+        changeSeq:
+          type: integer
+          minimum: 0
         payload: {}
         refs:
           type: array
@@ -739,6 +869,50 @@ components:
               - not:
                   required:
                     - errors
+    request.batch.creation.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: RequestBatchCreation
+      type: object
+      required:
+        - requests
+      additionalProperties: false
+      properties:
+        requests:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/request.creation.schema'
+    request.batch.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: RequestBatch
+      type: object
+      required:
+        - requests
+      additionalProperties: false
+      properties:
+        requests:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/request.schema'
+    request.list.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: RequestList
+      type: object
+      required:
+        - taskId
+        - requests
+      additionalProperties: false
+      properties:
+        taskId:
+          $ref: '#/components/schemas/Uuid'
+        head:
+          type: integer
+          minimum: 0
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/request.schema'
     event.schema:
       $schema: http://json-schema.org/draft-07/schema#
       title: Event
@@ -937,6 +1111,12 @@ components:
             $ref: '#/components/schemas/Error'
     Conflict:
       description: The request conflicts with existing state, for example a `taskId` collision.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ContentTooLarge:
+      description: The batch contains more requests than the responder accepts per batch.
       content:
         application/json:
           schema:
