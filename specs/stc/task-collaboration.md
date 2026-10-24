@@ -107,6 +107,8 @@ is a new task with a new `taskId`.
 The [=Task Owner=] SHOULD NOT close a task while a [=Task Request=]
 under it is not terminal, because the request can no longer be answered after closure. [=Task Requests=] that are
 nevertheless not terminal at closure time SHOULD be concluded. How they are concluded is defined by [=Profiles=].
+The [=Task Owner=] concludes a request it submitted itself by cancelling it (see
+[Request Cancellation](#request-cancellation)).
 
 Closure is unilateral. The rule above binds the [=Task Owner=] only. A [=Task Participant=] MUST accept a closure
 regardless of [=Task Requests=] still open under the task. The participant has no veto, and a closure that overrides
@@ -309,15 +311,16 @@ settlement claim or to perform an 8D analysis. The action is identified by the r
 [=Profile=]. The request contains a payload conforming to the kind and optional [=Pointers=] to the records it
 concerns. The responder owns the request and serves its state at any time (see
 [Request State Machine](#request-state-machine)). The responder answers the request with the action's result,
-contributed as a [=Record=], or declines it with reasons.
+contributed as a [=Record=], or declines it with reasons. The requester MAY cancel a request it no longer needs
+before the responder answers or declines it (see [Request Cancellation](#request-cancellation)).
 
 #### Identity and Correlation
 
 A [=Task Request=] is identified by a `requestId` assigned by the receiving party (the responder) when the request is
 created, and is scoped to its [=Task=]. The `requestId` is the correlation handle for the interaction.
 
-A request is created by the requesting party via [Request Creation](#request-creation). Once a request is created, its existence and state are observable via
-[Request Retrieval](#request-retrieval).
+A request is created by the requesting party, the requester, via [Request Creation](#request-creation). Once a
+request is created, its existence and state are observable via [Request Retrieval](#request-retrieval).
 
 #### Request State Machine
 
@@ -330,8 +333,10 @@ stateDiagram-v2
     [*] --> DECLINED
     RECEIVED --> ANSWERED
     RECEIVED --> DECLINED
+    RECEIVED --> CANCELLED
     ANSWERED --> [*]
     DECLINED --> [*]
+    CANCELLED --> [*]
 ```
 
 | State      | Owner     | Terminal | Description                                                                                                |
@@ -339,9 +344,17 @@ stateDiagram-v2
 | `RECEIVED` | Responder | No       | The request is created and its outcome is pending.                                           |
 | `ANSWERED` | Responder | Yes      | The response is available. The request's `response` references it (see [Request Object](#request-object)). |
 | `DECLINED` | Responder | Yes      | The responder will not answer the request. The reasons are contained in the `errors` array.                  |
+| `CANCELLED` | Requester | Yes     | The requester withdrew the request before it was answered or declined (see [Request Cancellation](#request-cancellation)). |
 
 A responder that can answer immediately MAY report `ANSWERED` directly in the creation response. The states
 represent business-level outcomes only. Technical and transport failures are not modeled as request states.
+
+`CANCELLED` is the only state set by the requester, and it is reachable only from `RECEIVED`. The cancellation is
+unilateral. The responder does not decide whether to accept it. From the moment the responder records the
+cancellation, it MUST NOT answer or decline the request. Records the responder has published, or publishes later,
+remain ordinary contributions to its streams but are not the request's response. The consequences of a
+cancellation, such as costs the responder has already incurred, are defined by [=Profiles=] or the governing [[dsp]]
+agreement.
 
 A terminal request MUST NOT be reopened or transitioned further. A renewed demand, for example, a resubmitted claim,
 is a new [=Task Request=].
@@ -478,10 +491,11 @@ The following is a non-normative example:
 
 ### Request Status Event
 
-A `RequestStatus` event reports the terminal outcome of a [=Task Request=] to the requester. The responder MUST push
-it when a request reaches a terminal state after the creation response. A terminal state reported synchronously in
-the creation response is not pushed. The intermediate `RECEIVED` state is never pushed. It is reported synchronously
-in the creation response and is observable at any time via [Request Retrieval](#request-retrieval).
+A `RequestStatus` event reports the responder's outcome of a [=Task Request=] to the requester. The responder MUST
+push it when a request reaches `ANSWERED` or `DECLINED` after the creation response. A terminal state reported
+synchronously in the creation response is not pushed. The intermediate `RECEIVED` state is never pushed. It is
+reported synchronously in the creation response and is observable at any time via
+[Request Retrieval](#request-retrieval). `CANCELLED` is never pushed, because the requester sets it.
 
 The `subject` attribute of the event MUST be set to the `requestId`.
 
@@ -586,7 +600,7 @@ applicable code from this table applies:
 |--------|---------|
 | `400 Bad Request` | The body or query violates this specification's schemas or rules, including an event whose `source` is not its type's defined sender. |
 | `404 Not Found`   | The referenced resource is unknown or not visible to the caller, such as an unbound `taskId` or an unknown `fileId` or `requestId`. Also used in place of `401`/`403` where existence must not be revealed (see [Security and Authorization](#security-and-authorization)). |
-| `409 Conflict`    | The request conflicts with existing state, such as a `taskId` collision or a request submitted under a task in a terminal state. |
+| `409 Conflict`    | The request conflicts with existing state, such as a `taskId` collision, a request submitted under a task in a terminal state, or a cancellation of a request that is `ANSWERED` or `DECLINED`. |
 
 Every `4xx` error response contains a JSON body of the form `{ "message": "<human-readable description>" }`. The
 `message` is diagnostic and intended for developers and logs. Machine-readable discrimination is expressed by the
@@ -756,6 +770,26 @@ responder of, a party MUST respond with `HTTP 404 Not Found`.
 | **URL Path**    | `/tasks/:taskId/requests/:requestId`                                            |
 | **Response**    | `HTTP 200` with a [Request object](#request-object) OR `HTTP 4xx Client Error`  |
 
+### Request Cancellation
+
+The cancellation endpoint transitions a [=Task Request=] from `RECEIVED` to `CANCELLED` (see
+[Request State Machine](#request-state-machine)). It is invoked by the requester on the responder. The request has no
+body. The responder MUST apply a cancellation of a `RECEIVED` request.
+
+A cancellation of a request that is already `CANCELLED` is a replay. The responder MUST answer it with `HTTP 200` and
+the Request object. A cancellation of a request that is `ANSWERED` or `DECLINED` MUST be rejected with
+`HTTP 409 Conflict`. The requester then observes the outcome via [Request Retrieval](#request-retrieval). A
+cancellation of a request under a task in a terminal state MUST be rejected with `HTTP 409 Conflict`.
+
+If the `requestId` is unknown, the responder MUST respond with `HTTP 404 Not Found`. For a request it is not the
+responder of, a party MUST respond with `HTTP 404 Not Found`.
+
+|                 |                                                                                 |
+|-----------------|-------------------------------------------------------------------------------------|
+| **HTTP Method** | `POST`                                                                          |
+| **URL Path**    | `/tasks/:taskId/requests/:requestId/cancellation`                               |
+| **Response**    | `HTTP 200` with a [Request object](#request-object) whose `status` is `CANCELLED` OR `HTTP 4xx Client Error` |
+
 ### Notifications
 
 The `notifications` endpoint accepts the events defined in [Protocol Events](#protocol-events) and profile-defined
@@ -859,7 +893,7 @@ The Request object is the representation of a [=Task Request=]:
 | **Required** | - `requestId`: The identifier assigned to the [=Task Request=]. MUST be a UUID [[rfc9562]].            |
 |              | - `taskId`: The task the request belongs to.                                                           |
 |              | - `kind`: The request kind URI (see [Request Creation](#request-creation)).                            |
-|              | - `status`: The request's current state: one of `RECEIVED`, `ANSWERED`, `DECLINED`.                    |
+|              | - `status`: The request's current state: one of `RECEIVED`, `ANSWERED`, `DECLINED`, `CANCELLED`.       |
 |              | - `payload`: The request payload as submitted.                                                         |
 | **Optional** | - `refs`: The [=Pointers=] as submitted.                                                               |
 |              | - `respondBy`: As submitted.                                                                           |
@@ -904,7 +938,8 @@ A [=Profile=] binds this protocol to a domain. A profile MUST define:
    [Dataspace Protocol Integration](#dataspace-protocol-integration)).
 
 A profile MAY additionally define retention and deletion obligations keyed on task closure, deadline consequences for
-`respondBy`, and constraints on which party may open tasks or submit particular request kinds.
+`respondBy`, the consequences of a request cancellation, and constraints on which party may open tasks or submit
+particular request kinds.
 
 Profiles version their schemas independently of this specification. A record schema's major version is part of the
 stream `type`, so a breaking schema change produces a new stream rather than a new protocol version.
@@ -916,8 +951,8 @@ and acquisition, are defined by deployment profiles of this specification, consi
 
 **Sender identity.** Every event contains the asserting party's identity in its `source` attribute (see [[dcm]]).
 The recipient MUST verify that `source` matches the authenticated identity of the sender and MUST reject the event
-when they do not match. Likewise, a party MUST attribute API invocations (task creation, request creation, and file
-publication) to the authenticated channel identity only.
+when they do not match. Likewise, a party MUST attribute API invocations (task creation, request creation, request
+cancellation, and file publication) to the authenticated channel identity only.
 
 **Scope confinement.** Contributions and requests are confidential to the [=Task=]'s two parties. [=Files=],
 [=Task Indexes=], [Task objects](#task-object), and [Request objects](#request-object) MUST be served only over the

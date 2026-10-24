@@ -6,8 +6,8 @@ info:
     HTTP API exposed by every participant under the Structured Task
     Collaboration (STC) specification. The API is symmetric: both parties to a
     Task implement it in its entirety. It accepts task creations, serves the
-    participant's own Task Index and files, accepts and serves Task Requests,
-    and receives protocol events.
+    participant's own Task Index and files, accepts, serves, and cancels Task
+    Requests, and receives protocol events.
 
     A Task is identified by the `taskId` assigned by the Task Owner when the
     task is opened. A Task Request is identified by the `requestId` assigned by
@@ -309,6 +309,49 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/requests/{requestId}/cancellation:
+    post:
+      summary: Cancel a Task Request
+      description: |
+        Invoked by the requester on the responder to transition a Task Request
+        from `RECEIVED` to `CANCELLED`. The request has no body. The
+        cancellation is unilateral: the responder applies it and from then on
+        does not answer or decline the request. A cancellation of a request
+        that is already `CANCELLED` is a replay and is answered with
+        `HTTP 200`. A cancellation of a request that is `ANSWERED` or
+        `DECLINED`, or of a request under a task in a terminal state, is
+        rejected with `HTTP 409`. For a request it is not the responder of, a
+        party responds with `HTTP 404`. `CANCELLED` is never pushed as a
+        `RequestStatus` event.
+      operationId: cancelRequest
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: requestId
+          in: path
+          required: true
+          description: The `requestId` assigned when the request was created.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The request is cancelled. The body contains the Request object.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/request.schema'
+                  - properties:
+                      status:
+                        const: CANCELLED
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /notifications:
@@ -641,6 +684,7 @@ components:
             - RECEIVED
             - ANSWERED
             - DECLINED
+            - CANCELLED
         payload: {}
         refs:
           type: array
@@ -683,6 +727,18 @@ components:
             not:
               required:
                 - response
+        - if:
+            properties:
+              status:
+                const: CANCELLED
+          then:
+            allOf:
+              - not:
+                  required:
+                    - response
+              - not:
+                  required:
+                    - errors
     event.schema:
       $schema: http://json-schema.org/draft-07/schema#
       title: Event

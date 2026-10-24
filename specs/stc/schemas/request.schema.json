@@ -26,7 +26,8 @@
       "enum": [
         "RECEIVED",
         "ANSWERED",
-        "DECLINED"
+        "DECLINED",
+        "CANCELLED"
       ]
     },
     "payload": {},
@@ -130,6 +131,33 @@
             "response"
           ]
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "CANCELLED"
+          }
+        }
+      },
+      "then": {
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "response"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "errors"
+              ]
+            }
+          }
+        ]
       }
     }
   ]
