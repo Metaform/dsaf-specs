@@ -2,8 +2,9 @@
 
 *This document is non-normative.* It contains examples in the supply chain space used to exercise the
 [Structured Task Collaboration](./task-collaboration.md) (STC) specification. Each example shows
-concrete endpoint calls, records, and events. The three use cases are a streams-only early warning investigation, a
-warranty claim (request/answer), and an 8D analysis with an evolving report.
+concrete endpoint calls, records, and events. The four use cases are a streams-only early warning investigation, a
+warranty claim (request/answer), an 8D analysis with an evolving report, and product carbon footprints under
+provider-owned tasks with batched demands.
 
 ## Conventions
 
@@ -24,6 +25,9 @@ The examples use the following stream types and request kinds:
 | `https://w3id.org/dsaf/quality/v1/attachment`         | Binary attachments (both)               | zip       |
 | `https://w3id.org/dsaf/warranty/v1/settlement-claim`  | Warranty claim (request kind)           | n/a       |
 | `https://w3id.org/dsaf/quality/v1/8d-request`                | 8D analysis demand (request kind)       | n/a       |
+| `https://w3id.org/dsaf/pcf/v1/pcf`                       | Product carbon footprints (supplier)    | parquet   |
+| `https://w3id.org/dsaf/pcf/v1/pcf-demand`                | PCF demand (request kind)               | n/a       |
+| `https://w3id.org/dsaf/pcf/v1/pcf-rejection`             | PCF rejection (request kind)            | n/a       |
 
 The examples also use the domain event `org.dsaf.quality.EarlyWarning.v1`.
 
@@ -32,7 +36,8 @@ verified identity is what `author` and event `source` fields must match. Parquet
 envelope columns first and `refs` serialized as a JSON column. Record identifiers are UUIDs, abbreviated in the
 tables. Prose and the envelope `key` member contain the readable domain names (claim-b, analysis-77, …).
 
-The task used throughout: `430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17` (below: `430f56d3-…`).
+Use Cases 1 and 3 run under the task `430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17` (below: `430f56d3-…`). Use Cases 2
+and 4 run under their own tasks, named in their sections.
 
 ---
 
@@ -488,6 +493,244 @@ reference `8d-77`.
 
 When the OEM closes the task, `closure.refs` pins `8d-77` @ revision 2. The closure references its concluding
 artifact, and the deletion clock starts for the data contributed under the task.
+
+---
+
+## Use Case 4: Product Carbon Footprints (provider-owned tasks, batched demands)
+
+The OEM needs PCFs for the parts it buys from the supplier. Here the supplier is the Provider and owns the task,
+because PCFs are the supplier's records. The OEM starts the relationship by concluding a PCF Agreement, fills gaps
+with a batch of demands, and rejects one PCF, which the supplier recalculates.
+
+This use case runs under its own task, the supplier's 2026 PCF task `9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54`
+(below: `9c4a7e21-…`).
+
+```mermaid
+sequenceDiagram
+    participant OEM
+    participant Supplier
+    Note over OEM,Supplier: 1. OEM concludes a PCF Agreement on the supplier's dataset
+    Supplier->>OEM: 1. POST /tasks (PCF 2026, OPEN)
+    OEM-->>Supplier: 201 Task (OPEN)
+    Note over Supplier: 2. Publish PCFs A and B (pcf seq 0)
+    Supplier->>OEM: 2. POST /notifications FilesAppended (pcf seq 0)
+    OEM-->>Supplier: 204
+    OEM->>Supplier: 3. POST /tasks/{taskId}/requests/batch (pcf-demand C, D)
+    Supplier-->>OEM: 200 (C RECEIVED, D DECLINED not-supplied)
+    Note over Supplier: 4. Calculate C, publish pcf seq 1
+    Supplier->>OEM: 4. POST /notifications FilesAppended (pcf seq 1)
+    OEM-->>Supplier: 204
+    Supplier->>OEM: 4. POST /notifications [RequestStatus (ANSWERED, C@0)]
+    OEM-->>Supplier: 204
+    OEM->>Supplier: 5. GET /tasks/{taskId}/requests?status=RECEIVED
+    Supplier-->>OEM: 200 (no requests, head 2)
+    OEM->>Supplier: 6. POST /tasks/{taskId}/requests (pcf-rejection, pins A@0)
+    Supplier-->>OEM: 201 Request (RECEIVED)
+    Note over Supplier: 7. Recalculate A, publish A@1 (pcf seq 2)
+    Supplier->>OEM: 7. POST /notifications FilesAppended (pcf seq 2)
+    OEM-->>Supplier: 204
+    Supplier->>OEM: 7. POST /notifications RequestStatus (ANSWERED, A@1)
+    OEM-->>Supplier: 204
+```
+
+### 1. The agreement starts the relationship, and the supplier opens the task
+
+The OEM negotiates the supplier's STC dataset under the offer whose usage policy designates the PCF profile. A
+generic STC agreement, for example the one the parties use for quality, would not start a PCF relationship. The
+supplier observes the concluded agreement as the provider of the negotiation. It already holds an agreement on the
+OEM's dataset, so it opens the first PCF task right away:
+
+```http
+POST https://oem.example.com/stc/tasks
+```
+
+```json
+{
+  "taskId": "9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54",
+  "status": "OPEN",
+  "createdAt": "2026-11-02T08:00:00Z",
+  "title": "PCF 2026",
+  "description": "Product carbon footprints for the 2026 reporting period."
+}
+```
+
+→ `201` with the Task object (`status` `OPEN`). The supplier is the Task Owner. A task the OEM opened itself would
+be declined with the reason `https://w3id.org/dsaf/pcf/v1/decline/consumer-owned`.
+
+### 2. Supplier publishes the PCFs it already has (file seq 0)
+
+The supplier publishes the PCFs it has calculated for parts it supplies to the OEM. `footprint` is a JSON column
+containing a PACT `ProductFootprint`, abbreviated here:
+
+| recordId | key | revision | marker | version | productId | customerProductId | declaredUnit | footprintModel | footprint |
+| -------- | --- | -------- | ------ | ------- | --------- | ----------------- | ------------ | -------------- | --------- |
+| d1a4c7e2-… | pcf-A | 0 | ADDED | 0 | HSG-100 | CP-900 | 1 piece | `…/footprint-model/pact/3` | `{"id":"5e1f…","specVersion":"3.0.0","status":"Active",…}` |
+| e2b5d8f3-… | pcf-B | 0 | ADDED | 0 | BRK-210 | CP-912 | 1 kilogram | `…/footprint-model/pact/3` | `{"id":"6f2a…","specVersion":"3.0.0","status":"Active",…}` |
+
+Both records also contain `referencePeriod` (2026-01-01 to 2026-12-31) and `validityPeriod`, matching the
+footprint's `pcf.referencePeriodStart`, `pcf.referencePeriodEnd`, `validityPeriodStart`, and `validityPeriodEnd`. The
+supplier announces the file with `FilesAppended`, as in Use Case 1.
+
+### 3. OEM demands the missing PCFs in one batch
+
+The OEM reconciles the PCFs against its bill of materials and finds two parts without one. It submits both demands in
+one call, identifying the parts by its own part numbers:
+
+```http
+POST https://tier1.example.com/stc/tasks/9c4a7e21-…/requests/batch
+```
+
+```json
+{
+  "requests": [
+    {
+      "messageId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "kind": "https://w3id.org/dsaf/pcf/v1/pcf-demand",
+      "payload": { "customerProductId": "CP-930" },
+      "respondBy": "2026-12-15T00:00:00Z"
+    },
+    {
+      "messageId": "6e7f8a9b-0c1d-4e2f-9a3b-4c5d6e7f8a9b",
+      "kind": "https://w3id.org/dsaf/pcf/v1/pcf-demand",
+      "payload": { "customerProductId": "CP-944" },
+      "respondBy": "2026-12-15T00:00:00Z"
+    }
+  ]
+}
+```
+
+→ `200`. The supplier recognizes at once that it does not supply CP-944 to the OEM and declines that demand in the
+response. The other demand waits for a calculation:
+
+```json
+{
+  "requests": [
+    {
+      "requestId": "7b8c9d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e",
+      "taskId": "9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54",
+      "kind": "https://w3id.org/dsaf/pcf/v1/pcf-demand",
+      "status": "RECEIVED",
+      "changeSeq": 0,
+      "payload": { "customerProductId": "CP-930" },
+      "respondBy": "2026-12-15T00:00:00Z"
+    },
+    {
+      "requestId": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+      "taskId": "9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54",
+      "kind": "https://w3id.org/dsaf/pcf/v1/pcf-demand",
+      "status": "DECLINED",
+      "changeSeq": 1,
+      "payload": { "customerProductId": "CP-944" },
+      "respondBy": "2026-12-15T00:00:00Z",
+      "errors": [
+        { "message": "CP-944 is not supplied to this customer",
+          "specifier": "https://w3id.org/dsaf/pcf/v1/decline/not-supplied" }
+      ]
+    }
+  ]
+}
+```
+
+Each demand has its own `requestId`, state, and outcome. A batch of thousands of demands works the same way. A
+retry of the whole batch after a timeout returns the same requests, because each element is idempotent on its
+`messageId`.
+
+### 4. Supplier answers with a new record and a batch of status events
+
+The supplier calculates the PCF for CP-930 and publishes it as file seq 1: `pcf-C` @ revision 0, `ADDED`, `version`
+0, `productId` `HSG-130`, `customerProductId` `CP-930`. No live PCF for the part existed in any open task, so the
+record goes to the task the demand was submitted under. It announces the file and then sends the status events as a
+DCM batch, a JSON array of events, here with one element:
+
+```json
+[
+  {
+    "specversion": "1.0",
+    "type": "org.dsaf.stc.RequestStatus.v1",
+    "source": "did:web:tier1.example.com",
+    "id": "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+    "subject": "7b8c9d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e",
+    "time": "2026-11-20T10:00:00Z",
+    "datacontenttype": "application/json",
+    "data": {
+      "taskId": "9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54",
+      "requestId": "7b8c9d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e",
+      "status": "ANSWERED",
+      "response": {
+        "record": { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/pcf/v1/pcf",
+                    "record": "f3c6e9a4-7b1d-4c2e-8f5a-9b0c1d2e3f4a", "revision": 0, "seq": 1 }
+      }
+    }
+  }
+]
+```
+
+### 5. OEM checks that nothing is pending
+
+The OEM does not need to track each event. It asks the supplier's request listing for demands still open:
+
+```http
+GET https://tier1.example.com/stc/tasks/9c4a7e21-…/requests?status=RECEIVED
+```
+
+→ `200`:
+
+```json
+{ "taskId": "9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54", "head": 2, "requests": [] }
+```
+
+`head` is 2 because the responder recorded three changes: the creation of each demand (0 and 1) and the answer to
+the first (2). An empty page means every demand is terminal. A requester that missed events pages through the listing
+with `fromChangeSeq` instead of polling each request.
+
+### 6. OEM rejects one PCF
+
+The OEM's review finds that the PCF for HSG-100 uses an outdated emission factor for aluminium. It rejects the
+revision it evaluated:
+
+```http
+POST https://tier1.example.com/stc/tasks/9c4a7e21-…/requests
+```
+
+```json
+{
+  "messageId": "3d4e5f6a-7b8c-4d9e-8f0a-1b2c3d4e5f6a",
+  "kind": "https://w3id.org/dsaf/pcf/v1/pcf-rejection",
+  "payload": {
+    "findings": [
+      { "category": "data-quality", "message": "Aluminium emission factor is from 2019; the agreement requires 2024 or later." }
+    ]
+  },
+  "refs": [
+    { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/pcf/v1/pcf",
+      "record": "d1a4c7e2-8b3f-4a5c-9d6e-0f1a2b3c4d5e", "revision": 0, "seq": 0 }
+  ],
+  "respondBy": "2026-12-20T00:00:00Z"
+}
+```
+
+→ `201` with the Request object (`RECEIVED`). Absence of a rejection would have meant the PCF stands. There is no
+acceptance step.
+
+### 7. Supplier recalculates (Recalculated)
+
+The supplier recalculates with the current factor and publishes file seq 2: `pcf-A` @ revision 1, `UPDATED`,
+`version` 1. The PACT footprint in the new revision has a new `id`, and its `precedingPfIds` contains the `id` of the
+footprint in revision 0, as the PACT binding of the profile requires. The supplier answers the rejection with a
+pointer pinned to revision 1. The rejection stays pinned to revision 0, so both the contested footprint and the
+correction remain on record.
+
+### 8. Variations
+
+- **Yearly rollover**: at the start of 2027 the supplier opens a new PCF task, which becomes the Current Task. New
+  PCFs for the 2027 reporting period go there and supersede their 2026 predecessors, which end with a `SUPERSEDED`
+  revision in the 2026 task. The 2026 task closes once nothing in it is live.
+- **Replaced**: had the finding concerned the declared unit, a member of the PCF Key, the supplier would withdraw
+  `pcf-A` and publish a new record naming it in `replaces`.
+- **Update demand**: for a PCF it holds but wants refreshed, the OEM submits a `pcf-update-demand` pinning the
+  revision it has.
+- **Agreement ends**: the supplier declines open requests with `terminated` and closes every open PCF task with the
+  outcome `terminated`.
 
 ---
 
