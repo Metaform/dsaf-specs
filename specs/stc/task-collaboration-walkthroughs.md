@@ -18,6 +18,7 @@ The examples use the following stream types and request kinds:
 | ------------------------------------------------------- | --------------------------------------- | --------- |
 | `https://w3id.org/dsaf/quality/v1/complaint`         | Customer complaints (OEM)               | parquet   |
 | `https://w3id.org/dsaf/quality/v1/part-analysis`     | Returned-part analyses (supplier)       | parquet   |
+| `https://w3id.org/dsaf/warranty/v1/claim`        | Warranty claims (OEM)                   | parquet   |
 | `https://w3id.org/dsaf/warranty/v1/verification` | Warranty claim verifications (supplier) | parquet   |
 | `https://w3id.org/dsaf/quality/v1/report-8d`          | 8D reports (supplier)                   | parquet   |
 | `https://w3id.org/dsaf/quality/v1/attachment`         | Binary attachments (both)               | zip       |
@@ -267,14 +268,17 @@ discovers `CLOSED` on its next `GET /tasks/430f56d3-…` against the owner.
 
 ## Use Case 2: Warranty Claim (request and answer)
 
-Under the same task, the OEM demands recompense for the repair behind claim-b. A demand needs receipt,
-observable state, and explicit refusal, so it is a Task Request, not a contribution.
+The OEM demands recompense for the repair behind the field complaint of Use Case 1. Warranty runs under its own
+task, the OEM's current warranty task under the Warranty Agreement, because the Warranty Claim Profile keeps claims
+in generation tasks owned by the claimant. Pointers never cross tasks, so the claim and its evidence are contributed
+under the warranty task. A demand needs receipt, observable state, and explicit refusal, so it is a Task Request,
+not a contribution.
 
 ```mermaid
 sequenceDiagram
     participant OEM
     participant Supplier
-    Note over OEM: 1. invoice-7 and claim-b@1 are already published
+    Note over OEM: 1. invoice-7 and claim WC-2026-0815@0 are already published
     OEM->>Supplier: 2. POST /tasks/{taskId}/requests (settlement-claim)
     Supplier-->>OEM: 201 Request (RECEIVED)
     OEM->>Supplier: 3. GET /tasks/{taskId}/requests/{requestId}
@@ -293,13 +297,14 @@ sequenceDiagram
 
 ### 1. Supporting evidence is already published
 
-The repair invoice went into the OEM's attachment stream (file seq 0, record `invoice-7` @ revision 0),
-announced like any contribution. The claim itself is `claim-b` @ revision 1 from Use Case 1.
+The OEM's claim stream contains the claim `WC-2026-0815` @ revision 0 (file seq 0), with the repair date, the
+customer part number, and the claimed amount. The repair invoice went into the OEM's attachment stream (file seq 0,
+record `invoice-7` @ revision 0). Both were announced like any contribution.
 
 ### 2. OEM submits the claim
 
 ```http
-POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
+POST https://tier1.example.com/stc/tasks/5b2e9c71-…/requests
 ```
 
 ```json
@@ -308,11 +313,11 @@ POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
   "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
   "payload": {
     "claimedAmount": { "value": 418.50, "currency": "EUR" },
-    "repairReference": "RO-2026-88213"
+    "repairReference": "WC-2026-0815"
   },
   "refs": [
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
-      "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
+    { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/warranty/v1/claim",
+      "record": "6d2f8a14-3b5c-4e7d-9a1f-2c4e6b8d0f13", "revision": 0, "seq": 0 },
     { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/attachment",
       "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 0 }
   ],
@@ -320,29 +325,29 @@ POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
 }
 ```
 
-→ `201`, `Location: /tasks/430f56d3-…/requests/8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f`:
+→ `201`, `Location: /tasks/5b2e9c71-…/requests/8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f`:
 
 ```json
 {
   "requestId": "8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
-  "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
+  "taskId": "5b2e9c71-8d34-4f2a-9b16-3e7c0a5d1f48",
   "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
   "status": "RECEIVED",
   "changeSeq": 0,
-  "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" }, "repairReference": "RO-2026-88213" },
+  "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" }, "repairReference": "WC-2026-0815" },
   "refs": [ "… as submitted …" ],
   "respondBy": "2026-12-01T00:00:00Z"
 }
 ```
 
 The `201` is the receipt. After a network timeout, the OEM retries with the **same** `messageId` and gets
-this same request back. The pinned `refs` mean the demand stays bound to claim-b@1 even if the claim record
-evolves later.
+this same request back. The pinned `refs` mean the demand stays bound to the claim at revision 0 even if the claim
+record evolves later.
 
 ### 3. The wait is observable
 
 ```http
-GET https://tier1.example.com/stc/tasks/430f56d3-…/requests/8c1f2d3e-…
+GET https://tier1.example.com/stc/tasks/5b2e9c71-…/requests/8c1f2d3e-…
 ```
 
 → `200`, `status: RECEIVED`. After `respondBy`, "overdue" is the OEM's local judgment.
@@ -353,7 +358,7 @@ The verification goes into the supplier's verification stream, file seq 0:
 
 | recordId   | key               | revision | marker | refs                                                                                                     | acceptedQuota | grounds                                                                       |
 | ---------- | ----------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------- |
-| 2041fa1b-… | verification-2041 | 0        | ADDED  | `[{"author":"did:web:oem.example.com","type":"…/complaint","record":"b7e3d2c1-…","revision":1,"seq":1}]` | 0.60          | corrosion consistent with supplied-lot defect; labor rate partially contested |
+| 2041fa1b-… | verification-2041 | 0        | ADDED  | `[{"author":"did:web:oem.example.com","type":"…/claim","record":"6d2f8a14-…","revision":0,"seq":0}]` | 0.60          | corrosion consistent with supplied-lot defect; labor rate partially contested |
 
 `FilesAppended` announces it. The spec requires publication no later than the transition, so the pointer bound
 next can never dangle.
@@ -372,7 +377,7 @@ The supplier transitions `RECEIVED → ANSWERED`, binding the response pointer, 
   "time": "2026-11-20T15:12:00Z",
   "datacontenttype": "application/json",
   "data": {
-    "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
+    "taskId": "5b2e9c71-8d34-4f2a-9b16-3e7c0a5d1f48",
     "requestId": "8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
     "status": "ANSWERED",
     "response": {
@@ -397,8 +402,11 @@ against exactly the record revisions both sides saw.
 - **Immediate decline**: for a claim for a part outside the supplier's scope, the creation response itself is
   `201` with `status: DECLINED` and `errors: [{ "message": "Part 4711-B is not a supplied component" }]`.
   The request exists and reports `DECLINED` with its reasons on every later retrieval.
-- **Dispute**: the OEM contests the quota with a **new** request (new `messageId`, kind per profile) whose
-  `refs` pin `verification-2041@0`. The original request stays terminal and immutable.
+- **Dispute**: the OEM contests the quota with a **new** request (new `messageId`, kind `settlement-dispute`)
+  whose `refs` pin `verification-2041@0`. The original request stays terminal and immutable. The supplier answers
+  with a new revision of the same verification record (`verification-2041@1`) or, if it upholds its evaluation,
+  with a pointer to the current revision. The current verification of the claim is always the record's current
+  revision.
 
 ---
 
@@ -438,7 +446,7 @@ POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
 {
   "messageId": "c2e6a0f3-4d5b-4a8c-9d0e-3f2a1b4c5d6e",
   "kind": "https://w3id.org/dsaf/quality/v1/8d-request",
-  "payload": { "problem": "Connector pin corrosion, DTC C1236", "partNumber": "BRK-4711" },
+  "payload": { "problem": "Connector pin corrosion, DTC C1236", "customerPartNumber": "BRK-4711" },
   "refs": [
     { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
       "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
@@ -491,7 +499,7 @@ announced is recoverable by pull:
 | Lost event | Recovered by |
 |---|---|
 | `FilesAppended` | `GET /tasks/{taskId}/index` (the gapless `seq` exposes the missing files) |
-| `RequestStatus` | `GET /tasks/{taskId}/requests/{requestId}` |
+| `RequestStatus` | `GET /tasks/{taskId}/requests/{requestId}`, or `GET /tasks/{taskId}/requests?fromChangeSeq=n` for many requests |
 | `TaskStatus` | `GET /tasks/{taskId}` against the owner |
 | profile events (early warning) | re-sent by their author, or moot, because they reference records the index already lists |
 
