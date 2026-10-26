@@ -160,7 +160,9 @@ A [=File=] is an immutable package of [=Record Entries=], assigned a sequence nu
   file. The sequence has no gaps, so a missing file is detectable.
 - A published file MUST NOT be modified or replaced. A correction is a new file containing new [=Record Entries=].
 - Each file has a `fileId` (the retrieval handle) and a `createdAt` timestamp, published in
-  the [=Task Index=]. Transport integrity derives from the secured channel ([[dcm]]). Implementations MAY keep
+  the [=Task Index=]. The index entry SHOULD also contain the file's `size` in bytes and its `entryCount`, the
+  number of [=Record Entries=] it contains, so that a consumer can bound a download before it starts and detect a
+  truncated transfer. Transport integrity derives from the secured channel ([[dcm]]). Implementations MAY keep
   their own content digests privately.
 
 A file is a delta of the record set. It contains entries only for records that changed. The absence of a record from a
@@ -303,7 +305,8 @@ absent from its own holdings.
 
 Events are hints, never the system of record. No correctness property of this protocol depends on the delivery of
 an event. Every event is recoverable from the [=Task Index=], the [request listing](#request-listing), and the
-resources they list.
+resources they list. The [Task Summary](#task-summary) endpoint reports the positions of all of them in one
+conditional request, so that a party can detect missed events for many tasks at low cost.
 
 ### Task Requests
 
@@ -478,13 +481,15 @@ The following is a non-normative example:
       {
         "type": "https://w3id.org/example/schemas/parts-analysis/4",
         "files": [
-          { "seq": 1, "fileId": "f7c3b2a1-9d0e-4f5a-8b6c-1d2e3f4a5b6d", "createdAt": "2026-10-28T08:40:03Z" }
+          { "seq": 1, "fileId": "f7c3b2a1-9d0e-4f5a-8b6c-1d2e3f4a5b6d", "createdAt": "2026-10-28T08:40:03Z",
+            "size": 65536, "entryCount": 4 }
         ]
       },
       {
         "type": "https://w3id.org/example/schemas/attachment/1",
         "files": [
-          { "seq": 1, "fileId": "c4d1e2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f", "createdAt": "2026-10-28T08:40:03Z" }
+          { "seq": 1, "fileId": "c4d1e2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f", "createdAt": "2026-10-28T08:40:03Z",
+            "size": 2097152, "entryCount": 1 }
         ]
       }
     ]
@@ -643,8 +648,8 @@ array.
 
 The task retrieval endpoint returns the current [Task object](#task-object). The [=Task Owner=] serves the
 authoritative representation, including the current `status`. A [=Task Participant=] that missed a `TaskStatus` event
-polls the owner's endpoint to observe the current state. For a task it does not own, a party MUST respond with
-`HTTP 404 Not Found`.
+observes the current state through the owner's [Task Summary](#task-summary) or this endpoint. For a task it does
+not own, a party MUST respond with `HTTP 404 Not Found`.
 
 If the `taskId` is unknown, the endpoint MUST respond with `HTTP 404 Not Found`.
 
@@ -678,6 +683,38 @@ Because a long-lived task accumulates file entries without bound, the endpoint s
 | **URL Path**    | `/tasks/:taskId/index`                                                          |
 | **Query**       | `stream` *(optional)*: a stream `type` URI. `fromSeq` *(optional, requires `stream`)*: lowest `seq` to include. `summary` *(optional)*: `true` for heads only |
 | **Response**    | `HTTP 200` with a [Task Index object](#task-index-object) OR `HTTP 4xx Client Error` |
+
+### Task Summary
+
+The task summary endpoint returns, in one response, the positions a counterparty needs to detect missed events
+under a task: the task `status`, the `head` of each stream the serving party has contributed, and the highest
+`changeSeq` the serving party has assigned as responder. It is the polling form of the protocol. A party that
+reconciles many tasks polls this endpoint instead of [Task Retrieval](#task-retrieval), the summary form of
+[Index Retrieval](#index-retrieval), and [Request Listing](#request-listing).
+
+The summary contains `status` only when the serving party is the [=Task Owner=], because only the owner's `status`
+is authoritative. The `streams` member contains the serving party's streams as summary stream objects (see
+[Task Index object](#task-index-object)). The `requestsHead` member is the highest `changeSeq` the serving party
+has assigned under the task (see [Request Listing](#request-listing)) and is absent when it is the responder of no
+request under the task.
+
+The response MUST contain an `ETag` header [[rfc9110]] whose value changes whenever the `status`, any stream `head`,
+or `requestsHead` changes. A request that contains `If-None-Match` with the current value MUST be answered with
+`HTTP 304 Not Modified` and no body. A party polling many tasks therefore transfers a body only for tasks that
+changed.
+
+The summary MAY contain `pollInterval`, the number of seconds the serving party suggests between polls of this
+task. The value is a hint. A client SHOULD NOT poll more often than the hint while the task is otherwise quiet. A
+client that receives `304` keeps the last hint it received.
+
+If the `taskId` is unknown, the endpoint MUST respond with `HTTP 404 Not Found`.
+
+|                 |                                                                                 |
+|-----------------|-------------------------------------------------------------------------------------|
+| **HTTP Method** | `GET`                                                                           |
+| **URL Path**    | `/tasks/:taskId/summary`                                                        |
+| **Request**     | Optionally `If-None-Match` with a previously received `ETag`                    |
+| **Response**    | `HTTP 200` with a [Task Summary object](#task-summary-object) and an `ETag`, `HTTP 304` when unchanged, OR `HTTP 4xx Client Error` |
 
 ### File Retrieval
 
@@ -963,6 +1000,8 @@ Each file entry:
 | **Required** | - `seq`: The file's position in the stream (see [Files](#files)).                                      |
 |              | - `fileId`: The retrieval handle (see [File Retrieval](#file-retrieval)). MUST be a UUID [[rfc9562]].  |
 |              | - `createdAt`: [[rfc3339]] timestamp of publication.                                                   |
+| **Optional** | - `size`: The file's length in bytes. RECOMMENDED.                                                     |
+|              | - `entryCount`: The number of [=Record Entries=] in the file. RECOMMENDED.                             |
 
 A file entry contains no media type. The file format is declared by the stream type (see [Packaging](#packaging)).
 
@@ -975,17 +1014,48 @@ The following is a non-normative example:
     {
       "type": "https://w3id.org/example/schemas/parts-analysis/4",
       "files": [
-        { "seq": 0, "fileId": "33ab9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "createdAt": "2026-10-21T10:02:11Z" }
+        { "seq": 0, "fileId": "33ab9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "createdAt": "2026-10-21T10:02:11Z",
+          "size": 184320, "entryCount": 12 }
       ]
     },
     {
       "type": "https://w3id.org/example/schemas/attachment/1",
       "files": [
-        { "seq": 0, "fileId": "90ee1f2a-3b4c-4d5e-9f6a-7b8c9d0e1f2a", "createdAt": "2026-10-21T10:02:11Z" },
-        { "seq": 1, "fileId": "c4d1e2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f", "createdAt": "2026-10-28T08:40:03Z" }
+        { "seq": 0, "fileId": "90ee1f2a-3b4c-4d5e-9f6a-7b8c9d0e1f2a", "createdAt": "2026-10-21T10:02:11Z",
+          "size": 7340032, "entryCount": 3 },
+        { "seq": 1, "fileId": "c4d1e2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f", "createdAt": "2026-10-28T08:40:03Z",
+          "size": 2097152, "entryCount": 1 }
       ]
     }
   ]
+}
+```
+
+### Task Summary Object
+
+The Task Summary object is the response to [Task Summary](#task-summary):
+
+|              |                                                                                                       |
+|--------------|-----------------------------------------------------------------------------------------------------------|
+| **Schema**   | [JSON Schema](./schemas/task.summary.schema.json)                                                      |
+| **Required** | - `taskId`: The task the summary belongs to.                                                           |
+|              | - `streams`: The serving party's streams as summary stream objects, each with `type` and `head`. Empty if the party has contributed nothing. |
+| **Optional** | - `status`: The task state. Present only when the serving party is the [=Task Owner=].                 |
+|              | - `requestsHead`: The highest `changeSeq` the serving party has assigned under the task. Absent when the party is the responder of no request under the task. |
+|              | - `pollInterval`: Suggested seconds between polls. A hint.                                             |
+
+The following is a non-normative example, as served by a [=Task Owner=]:
+
+```json
+{
+  "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
+  "status": "OPEN",
+  "streams": [
+    { "type": "https://w3id.org/example/schemas/parts-analysis/4", "head": 0 },
+    { "type": "https://w3id.org/example/schemas/attachment/1", "head": 1 }
+  ],
+  "requestsHead": 7,
+  "pollInterval": 900
 }
 ```
 

@@ -161,6 +161,51 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /tasks/{taskId}/summary:
+    get:
+      summary: Retrieve the Task Summary
+      description: |
+        Returns, in one response, the positions a counterparty needs to detect
+        missed events under the task: the task `status` (present only when the
+        serving party is the Task Owner), the `head` of each stream the serving
+        party has contributed, and `requestsHead`, the highest `changeSeq` the
+        serving party has assigned as responder (absent when it is the
+        responder of no request). This is the polling form of the protocol.
+
+        The response contains an `ETag` whose value changes whenever `status`,
+        any stream `head`, or `requestsHead` changes. A request with
+        `If-None-Match` matching the current value is answered with
+        `HTTP 304 Not Modified` and no body. `pollInterval`, when present, is
+        the serving party's suggested number of seconds between polls.
+      operationId: getTaskSummary
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: If-None-Match
+          in: header
+          required: false
+          description: A previously received `ETag`.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The serving party's summary of the task.
+          headers:
+            ETag:
+              description: Changes whenever `status`, a stream `head`, or `requestsHead` changes.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/task.summary.schema'
+        '304':
+          description: The summary has not changed since the `ETag` given in `If-None-Match`.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /tasks/{taskId}/files/{fileId}:
     get:
       summary: Retrieve a file
@@ -657,6 +702,14 @@ components:
         createdAt:
           type: string
           format: date-time
+        size:
+          type: integer
+          minimum: 0
+          description: The file's length in bytes. Recommended.
+        entryCount:
+          type: integer
+          minimum: 0
+          description: The number of Record Entries in the file. Recommended.
     StreamFiles:
       type: object
       required:
@@ -895,6 +948,33 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/request.schema'
+    task.summary.schema:
+      $schema: http://json-schema.org/draft-07/schema#
+      title: TaskSummary
+      type: object
+      required:
+        - taskId
+        - streams
+      additionalProperties: false
+      properties:
+        taskId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum:
+            - OPEN
+            - DECLINED
+            - CLOSED
+        streams:
+          type: array
+          items:
+            $ref: '#/components/schemas/StreamHead'
+        requestsHead:
+          type: integer
+          minimum: 0
+        pollInterval:
+          type: integer
+          minimum: 1
     request.list.schema:
       $schema: http://json-schema.org/draft-07/schema#
       title: RequestList

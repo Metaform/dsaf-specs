@@ -58,6 +58,14 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entryCount": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

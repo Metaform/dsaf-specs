@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TaskSummary",
+  "type": "object",
+  "required": [
+    "taskId",
+    "streams"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "taskId": {
+      "$ref": "./common.schema.json#/definitions/Uuid"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "DECLINED",
+        "CLOSED"
+      ]
+    },
+    "streams": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/StreamHead"
+      }
+    },
+    "requestsHead": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pollInterval": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
