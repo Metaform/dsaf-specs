@@ -130,8 +130,9 @@ Task metadata (`title`, `description`) is immutable. It is set at creation and n
 
 Retention is governed by the [[dsp]] agreement or the deployment profile, not by this specification. The retention
 period starts when the task reaches a terminal state. For a `CLOSED` task this instant is `closure.closedAt`. For a
-`DECLINED` task it is `createdAt`, because the decline is synchronous with creation. After the retention period, the endpoints defined by this
-specification MAY respond with `HTTP 404 Not Found` for the task.
+`DECLINED` task it is `createdAt`, because the decline is synchronous with creation. After the retention period, the
+endpoints defined by this specification MAY respond with `HTTP 404 Not Found` for the task. Retention continues
+after the governing agreement ends (see [Agreement Lifecycle](#agreement-lifecycle)).
 
 ### Streams
 
@@ -1160,6 +1161,8 @@ A [=Profile=] binds this protocol to a domain. A profile MUST define:
 3. Any additional event types, following the rules in [Protocol Events](#protocol-events).
 4. A conformance URI identifying the profile and its major version, used for capability declaration (see
    [Dataspace Protocol Integration](#dataspace-protocol-integration)).
+5. The closure `outcome` and the decline reason a party uses when its agreement ends (see
+   [Agreement Lifecycle](#agreement-lifecycle)).
 
 A profile MAY additionally define retention and deletion obligations keyed on task closure, deadline consequences for
 `respondBy`, the consequences of a request cancellation, and constraints on which party may open tasks or submit
@@ -1221,6 +1224,26 @@ An agreement on a dataset is bound to the counterparty's verified identity. This
 in an event's `source` attribute and is verified per [Security and Authorization](#security-and-authorization). All
 [=Tasks=] between two parties operate under their agreements. A party's push obligations
 ([Protocol Events](#protocol-events)) extend to each counterparty whose dataset it holds an agreement on.
+
+### Agreement Lifecycle
+
+A [[dsp]] transfer process is the access mechanism for an agreement. It provides the credentials with which a party
+invokes the counterparty's endpoints. A transfer process has no protocol significance of its own. Replacing one
+under the same agreement changes no [=Task=], [=Stream=], [=Task Request=], or obligation, and a party MUST NOT
+treat the end of a transfer process as the end of the agreement.
+
+A party's obligations under an agreement end when the agreement ends, whether by expiry or by termination. When an
+agreement ends, the party that holds it SHOULD close every open [=Task=] it owns under that agreement and SHOULD
+decline every non-terminal [=Task Request=] it is the responder of under those tasks. The closure `outcome` and the
+decline reason are defined by the [=Profile=] (see [Profiles](#profiles)). A party MUST NOT append [=Files=] or
+submit [=Task Requests=] under an agreement that has ended.
+
+A new agreement between the same parties starts new [=Tasks=]. Nothing is carried over from tasks under the
+previous agreement, because its contributions were made under that agreement's usage policy. A profile MAY define
+how a successor task refers to its predecessor, for example through the `closure` `reason`.
+
+Retention (see [Task Retention](#task-retention)) is the last obligation under an ended agreement and continues
+after the agreement for the retention period it defines.
 
 ### Example
 
