@@ -256,28 +256,32 @@ paths:
           $ref: '#/components/responses/InternalServerError'
   /tasks/{taskId}/requests:
     post:
-      summary: Create a Task Request
+      summary: Create Task Requests
       description: |
-        Invoked by the requesting party to submit a demand that obligates a
-        response. Creation is idempotent on the body's `messageId`: a request
-        repeating a (counterparty, `messageId`) pair returns the
-        already-created Task Request in its current state (a retry arriving
-        after the responder answered returns `ANSWERED`), with a response
-        identical in form to the original — `HTTP 201` with the same
-        `Location`. The response carries the Request
-        representation with the assigned `requestId` and the current `status`,
-        and a `Location` header pointing at the created request. A request is
-        created even when the responder declines it immediately (`status` is
-        then `DECLINED`); the synchronous `201` is the undeniable receipt of
-        the demand. A structurally valid request whose `kind` the responder
-        does not implement is likewise created and declined, with the
-        unsupported kind URI in the error's `specifier` — never rejected with
-        `HTTP 400`, which is reserved for bodies violating this request schema.
+        Invoked by the requesting party to submit one or more demands that
+        obligate a response. The body contains `requests`, an array of
+        request bodies. Each is created, identified, and answered on its own,
+        with its own `requestId`, state, and outcome. Creation is idempotent
+        per request body on its (counterparty, `messageId`) pair: a body
+        repeating a pair returns the already-created Task Request in its
+        current state (a retry arriving after the responder answered returns
+        `ANSWERED`) and does not create it again. A call is not a transaction;
+        a requester that receives no response retries the call unchanged.
 
-        A request referencing an unknown `taskId` is rejected with `HTTP 404`;
-        a request submitted after the task is `CLOSED` is rejected with
-        `HTTP 409`.
-      operationId: createRequest
+        The body is validated as a unit. It is rejected with `HTTP 400` when
+        any request body violates the schema or when two contain the same
+        `messageId`. A request is created even when the responder declines it
+        immediately (`status` is then `DECLINED`); the synchronous `200` is
+        the receipt of the demands. A structurally valid request body whose
+        `kind` the responder does not implement is likewise created and
+        declined, with the unsupported kind URI in the error's `specifier`,
+        and does not invalidate the call.
+
+        A call under an unknown `taskId` is rejected with `HTTP 404`, and
+        under a task in a terminal state with `HTTP 409`. The responder
+        accepts calls of at least 100 requests and rejects a call above its
+        limit with `HTTP 413`.
+      operationId: createRequests
       parameters:
         - $ref: '#/components/parameters/TaskId'
       requestBody:
@@ -290,31 +294,41 @@ paths:
               settlementClaim:
                 summary: Submit a settlement claim with pinned evidence
                 value:
-                  messageId: b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a
-                  kind: https://w3id.org/example/requests/settlement-claim/1
-                  payload:
-                    claimedAmount:
-                      value: 418.5
-                      currency: EUR
-                  refs:
-                    - author: did:web:oem.example.com
-                      type: https://w3id.org/example/schemas/claim-data/3
-                      record: b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e
-                      revision: 1
-                      seq: 1
-                  respondBy: '2026-12-01T00:00:00Z'
+                  requests:
+                    - messageId: b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a
+                      kind: https://w3id.org/example/requests/settlement-claim/1
+                      payload:
+                        claimedAmount:
+                          value: 418.5
+                          currency: EUR
+                      refs:
+                        - author: did:web:oem.example.com
+                          type: https://w3id.org/example/schemas/claim-data/3
+                          record: b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e
+                          revision: 1
+                          seq: 1
+                      respondBy: '2026-12-01T00:00:00Z'
+              demands:
+                summary: Submit two demands in one call
+                value:
+                  requests:
+                    - messageId: 0f4e2a1b-6c3d-4e5f-8a7b-9c0d1e2f3a4b
+                      kind: https://w3id.org/example/requests/part-demand/1
+                      payload:
+                        productId: X-1001
+                    - messageId: 5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d
+                      kind: https://w3id.org/example/requests/part-demand/1
+                      payload:
+                        productId: Y-2002
       responses:
-        '201':
-          description: The Task Request was created.
-          headers:
-            Location:
-              description: The relative URL of the created request.
-              schema:
-                type: string
+        '200':
+          description: |
+            The Request objects of the call, in the order of the submitted
+            request bodies, each in its current state.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/request.schema'
+                $ref: '#/components/schemas/request.batch.schema'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -323,6 +337,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
         '500':
           $ref: '#/components/responses/InternalServerError'
     get:
@@ -386,69 +402,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-  /tasks/{taskId}/requests/batch:
-    post:
-      summary: Create Task Requests in a batch
-      description: |
-        Creates several Task Requests under one task in one call. Each element
-        is created, identified, and answered exactly as if it were submitted
-        alone via `createRequest`, with its own `requestId`, state, and
-        outcome. Idempotency applies to each element on its
-        (counterparty, `messageId`) pair.
-
-        The batch is validated as a unit. It is rejected with `HTTP 400` when
-        any element violates the request creation schema or when two elements
-        contain the same `messageId`. An element whose `kind` the responder
-        does not implement is created and declined and does not invalidate the
-        batch. A batch under an unknown `taskId` is rejected with `HTTP 404`,
-        and under a task in a terminal state with `HTTP 409`.
-
-        A batch is not a transaction. A requester that receives no response
-        retries the batch unchanged. The responder accepts batches of at least
-        100 requests and rejects a batch above its limit with `HTTP 413`.
-      operationId: createRequestBatch
-      parameters:
-        - $ref: '#/components/parameters/TaskId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/request.batch.creation.schema'
-            examples:
-              demands:
-                summary: Submit two demands in one batch
-                value:
-                  requests:
-                    - messageId: 0f4e2a1b-6c3d-4e5f-8a7b-9c0d1e2f3a4b
-                      kind: https://w3id.org/example/requests/part-demand/1
-                      payload:
-                        productId: X-1001
-                    - messageId: 5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d
-                      kind: https://w3id.org/example/requests/part-demand/1
-                      payload:
-                        productId: Y-2002
-      responses:
-        '200':
-          description: |
-            The Request objects of the batch, in the order of the submitted
-            elements, each in its current state.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/request.batch.schema'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '413':
-          $ref: '#/components/responses/ContentTooLarge'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /tasks/{taskId}/requests/{requestId}:
@@ -785,9 +738,9 @@ components:
       then:
         required:
           - revision
-    request.creation.schema:
+    request.creation.item.schema:
       $schema: http://json-schema.org/draft-07/schema#
-      title: RequestCreation
+      title: RequestCreationItem
       type: object
       required:
         - messageId
@@ -922,9 +875,9 @@ components:
               - not:
                   required:
                     - errors
-    request.batch.creation.schema:
+    request.creation.schema:
       $schema: http://json-schema.org/draft-07/schema#
-      title: RequestBatchCreation
+      title: RequestCreation
       type: object
       required:
         - requests
@@ -934,7 +887,7 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/request.creation.schema'
+            $ref: '#/components/schemas/request.creation.item.schema'
     request.batch.schema:
       $schema: http://json-schema.org/draft-07/schema#
       title: RequestBatch
@@ -1196,7 +1149,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     ContentTooLarge:
-      description: The batch contains more requests than the responder accepts per batch.
+      description: The call contains more requests than the responder accepts per call.
       content:
         application/json:
           schema:

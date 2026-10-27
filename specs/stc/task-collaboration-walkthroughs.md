@@ -285,7 +285,7 @@ sequenceDiagram
     participant Supplier
     Note over OEM: 1. invoice-7 and claim WC-2026-0815@0 are already published
     OEM->>Supplier: 2. POST /tasks/{taskId}/requests (settlement-claim)
-    Supplier-->>OEM: 201 Request (RECEIVED)
+    Supplier-->>OEM: 200 (RECEIVED)
     OEM->>Supplier: 3. GET /tasks/{taskId}/requests/{requestId}
     Supplier-->>OEM: 200 Request (RECEIVED)
     Note over Supplier: 4. Publish verification-2041@0 (verification seq 0)
@@ -314,34 +314,42 @@ POST https://tier1.example.com/stc/tasks/5b2e9c71-…/requests
 
 ```json
 {
-  "messageId": "b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a",
-  "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
-  "payload": {
-    "claimedAmount": { "value": 418.50, "currency": "EUR" },
-    "repairReference": "WC-2026-0815"
-  },
-  "refs": [
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/warranty/v1/claim",
-      "record": "6d2f8a14-3b5c-4e7d-9a1f-2c4e6b8d0f13", "revision": 0, "seq": 0 },
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/attachment",
-      "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 0 }
-  ],
-  "respondBy": "2026-12-01T00:00:00Z"
+  "requests": [
+    {
+      "messageId": "b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a",
+      "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
+      "payload": {
+        "claimedAmount": { "value": 418.50, "currency": "EUR" },
+        "repairReference": "WC-2026-0815"
+      },
+      "refs": [
+        { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/warranty/v1/claim",
+          "record": "6d2f8a14-3b5c-4e7d-9a1f-2c4e6b8d0f13", "revision": 0, "seq": 0 },
+        { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/attachment",
+          "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 0 }
+      ],
+      "respondBy": "2026-12-01T00:00:00Z"
+    }
+  ]
 }
 ```
 
-→ `201`, `Location: /tasks/5b2e9c71-…/requests/8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f`:
+→ `200`:
 
 ```json
 {
-  "requestId": "8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
-  "taskId": "5b2e9c71-8d34-4f2a-9b16-3e7c0a5d1f48",
-  "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
-  "status": "RECEIVED",
-  "changeSeq": 0,
-  "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" }, "repairReference": "WC-2026-0815" },
-  "refs": [ "… as submitted …" ],
-  "respondBy": "2026-12-01T00:00:00Z"
+  "requests": [
+    {
+      "requestId": "8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "taskId": "5b2e9c71-8d34-4f2a-9b16-3e7c0a5d1f48",
+      "kind": "https://w3id.org/dsaf/warranty/v1/settlement-claim",
+      "status": "RECEIVED",
+      "changeSeq": 0,
+      "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" }, "repairReference": "WC-2026-0815" },
+      "refs": [ "… as submitted …" ],
+      "respondBy": "2026-12-01T00:00:00Z"
+    }
+  ]
 }
 ```
 
@@ -425,7 +433,7 @@ sequenceDiagram
     participant OEM
     participant Supplier
     OEM->>Supplier: 1. POST /tasks/{taskId}/requests (8d-request)
-    Supplier-->>OEM: 201 Request (RECEIVED)
+    Supplier-->>OEM: 200 (RECEIVED)
     Note over Supplier: 2. Publish 8d-77@0 (report-8d seq 0)
     Supplier->>OEM: 2. POST /notifications FilesAppended (report-8d seq 0)
     OEM-->>Supplier: 204
@@ -449,19 +457,23 @@ POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
 
 ```json
 {
-  "messageId": "c2e6a0f3-4d5b-4a8c-9d0e-3f2a1b4c5d6e",
-  "kind": "https://w3id.org/dsaf/quality/v1/8d-request",
-  "payload": { "problem": "Connector pin corrosion, DTC C1236", "customerPartNumber": "BRK-4711" },
-  "refs": [
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
-      "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
-    { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/quality/v1/part-analysis",
-      "record": "a77f0e1d-2c3b-4a59-8e67-45d2c1b0a9f8", "revision": 0, "seq": 0 }
+  "requests": [
+    {
+      "messageId": "c2e6a0f3-4d5b-4a8c-9d0e-3f2a1b4c5d6e",
+      "kind": "https://w3id.org/dsaf/quality/v1/8d-request",
+      "payload": { "problem": "Connector pin corrosion, DTC C1236", "customerPartNumber": "BRK-4711" },
+      "refs": [
+        { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
+          "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
+        { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/quality/v1/part-analysis",
+          "record": "a77f0e1d-2c3b-4a59-8e67-45d2c1b0a9f8", "revision": 0, "seq": 0 }
+      ]
+    }
   ]
 }
 ```
 
-→ `201`, request `9d2e3f4a-…`, `status: RECEIVED`. (Request `refs` may point at either party's records, here one
+→ `200`, request `9d2e3f4a-…`, `status: RECEIVED`. (Request `refs` may point at either party's records, here one
 of each.)
 
 ### 2. Supplier answers with the initial report
@@ -515,7 +527,7 @@ sequenceDiagram
     Note over Supplier: 2. Publish PCFs A and B (pcf seq 0)
     Supplier->>OEM: 2. POST /notifications FilesAppended (pcf seq 0)
     OEM-->>Supplier: 204
-    OEM->>Supplier: 3. POST /tasks/{taskId}/requests/batch (pcf-demand C, D)
+    OEM->>Supplier: 3. POST /tasks/{taskId}/requests (pcf-demand C, D)
     Supplier-->>OEM: 200 (C RECEIVED, D DECLINED not-supplied)
     Note over Supplier: 4. Calculate C, publish pcf seq 1
     Supplier->>OEM: 4. POST /notifications FilesAppended (pcf seq 1)
@@ -525,7 +537,7 @@ sequenceDiagram
     OEM->>Supplier: 5. GET /tasks/{taskId}/requests?status=RECEIVED
     Supplier-->>OEM: 200 (no requests, head 2)
     OEM->>Supplier: 6. POST /tasks/{taskId}/requests (pcf-rejection, pins A@0)
-    Supplier-->>OEM: 201 Request (RECEIVED)
+    Supplier-->>OEM: 200 (RECEIVED)
     Note over Supplier: 7. Recalculate A, publish A@1 (pcf seq 2)
     Supplier->>OEM: 7. POST /notifications FilesAppended (pcf seq 2)
     OEM-->>Supplier: 204
@@ -571,13 +583,13 @@ Both records also contain `referencePeriod` (2026-01-01 to 2026-12-31) and `vali
 footprint's `pcf.referencePeriodStart`, `pcf.referencePeriodEnd`, `validityPeriodStart`, and `validityPeriodEnd`. The
 supplier announces the file with `FilesAppended`, as in Use Case 1.
 
-### 3. OEM demands the missing PCFs in one batch
+### 3. OEM demands the missing PCFs in one call
 
 The OEM reconciles the PCFs against its bill of materials and finds two parts without one. It submits both demands in
 one call, identifying the parts by its own part numbers:
 
 ```http
-POST https://tier1.example.com/stc/tasks/9c4a7e21-…/requests/batch
+POST https://tier1.example.com/stc/tasks/9c4a7e21-…/requests
 ```
 
 ```json
@@ -694,22 +706,26 @@ POST https://tier1.example.com/stc/tasks/9c4a7e21-…/requests
 
 ```json
 {
-  "messageId": "3d4e5f6a-7b8c-4d9e-8f0a-1b2c3d4e5f6a",
-  "kind": "https://w3id.org/dsaf/pcf/v1/pcf-rejection",
-  "payload": {
-    "findings": [
-      { "category": "data-quality", "message": "Aluminium emission factor is from 2019; the agreement requires 2024 or later." }
-    ]
-  },
-  "refs": [
-    { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/pcf/v1/pcf",
-      "record": "d1a4c7e2-8b3f-4a5c-9d6e-0f1a2b3c4d5e", "revision": 0, "seq": 0 }
-  ],
-  "respondBy": "2026-12-20T00:00:00Z"
+  "requests": [
+    {
+      "messageId": "3d4e5f6a-7b8c-4d9e-8f0a-1b2c3d4e5f6a",
+      "kind": "https://w3id.org/dsaf/pcf/v1/pcf-rejection",
+      "payload": {
+        "findings": [
+          { "category": "data-quality", "message": "Aluminium emission factor is from 2019; the agreement requires 2024 or later." }
+        ]
+      },
+      "refs": [
+        { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/pcf/v1/pcf",
+          "record": "d1a4c7e2-8b3f-4a5c-9d6e-0f1a2b3c4d5e", "revision": 0, "seq": 0 }
+      ],
+      "respondBy": "2026-12-20T00:00:00Z"
+    }
+  ]
 }
 ```
 
-→ `201` with the Request object (`RECEIVED`). Absence of a rejection would have meant the PCF stands. There is no
+→ `200` with the Request object (`RECEIVED`). Absence of a rejection would have meant the PCF stands. There is no
 acceptance step.
 
 ### 7. Supplier recalculates (Recalculated)

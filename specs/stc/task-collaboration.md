@@ -324,8 +324,8 @@ before the responder answers or declines it (see [Request Cancellation](#request
 A [=Task Request=] is identified by a `requestId` assigned by the receiving party (the responder) when the request is
 created, and is scoped to its [=Task=]. The `requestId` is the correlation handle for the interaction.
 
-A request is created by the requesting party, the requester, via [Request Creation](#request-creation), alone or
-together with other requests via [Batch Request Creation](#batch-request-creation). Once a request is created, its
+A request is created by the requesting party, the requester, via [Request Creation](#request-creation), one or
+more at a time. Once a request is created, its
 existence and state are observable via [Request Retrieval](#request-retrieval) and
 [Request Listing](#request-listing).
 
@@ -579,7 +579,7 @@ sequenceDiagram
     peer ->> owner: GET /tasks/:taskId/files/:fileId
     owner -->> peer: file
     owner ->> peer: POST /tasks/:taskId/requests (demand, pinned refs)
-    peer -->> owner: 201 Request (RECEIVED)
+    peer -->> owner: 200 (RECEIVED)
     peer ->> owner: FilesAppended (part-analysis seq 0, the answer record)
     peer ->> owner: RequestStatus (ANSWERED, response pointer)
     owner ->> peer: GET /tasks/:taskId/files/:fileId
@@ -614,7 +614,7 @@ applicable code from this table applies:
 | `400 Bad Request` | The body or query violates this specification's schemas or rules, including an event whose `source` is not its type's defined sender. |
 | `404 Not Found`   | The referenced resource is unknown or not visible to the caller, such as an unbound `taskId` or an unknown `fileId` or `requestId`. Also used in place of `401`/`403` where existence must not be revealed (see [Security and Authorization](#security-and-authorization)). |
 | `409 Conflict`    | The request conflicts with existing state, such as a `taskId` collision, a request submitted under a task in a terminal state, or a cancellation of a request that is `ANSWERED` or `DECLINED`. |
-| `413 Content Too Large` | A batch contains more requests than the responder accepts per batch (see [Batch Request Creation](#batch-request-creation)). |
+| `413 Content Too Large` | A call contains more requests than the responder accepts per call (see [Request Creation](#request-creation)). |
 
 Every `4xx` error response contains a JSON body of the form `{ "message": "<human-readable description>" }`. The
 `message` is diagnostic and intended for developers and logs. Machine-readable discrimination is expressed by the
@@ -742,104 +742,80 @@ apply at the redirect target.
 
 ### Request Creation
 
-The `requests` endpoint creates a [=Task Request=] on the responder. The body contains a `messageId`, the request
-`kind`, the payload, and optional `refs` pointers and deadline.
+The `requests` endpoint creates one or more [=Task Requests=] under a task in one call. The body contains `requests`,
+an array of request bodies. Each request body contains a `messageId`, the request `kind`, the payload, and optional
+`refs` pointers and deadline. Each request in the array is created, identified, and answered on its own, with its own
+`requestId`, state, and outcome, so one request in a call can be answered while another is declined.
 
 |              |                                                                                                       |
 |--------------|-----------------------------------------------------------------------------------------------------------|
 | **Schema**   | [JSON Schema](./schemas/request.creation.schema.json)                                                  |
-| **Required** | - `messageId`: A unique identifier for this message. MUST be a UUID [[rfc9562]].                       |
+| **Required** | - `requests`: An array of at least one request body.                                                  |
+|              | Each request body contains:                                                                            |
+|              | - `messageId`: A unique identifier for this message. MUST be a UUID [[rfc9562]].                       |
 |              | - `kind`: A URI identifying the request kind and the schema of `payload`, defined by a [=Profile=].    |
 |              | - `payload`: The transactional content of the demand, conforming to `kind`.                            |
 | **Optional** | - `refs`: An array of [=Pointers=] citing the records the demand concerns or rests on. Pointers SHOULD be revision-pinned. |
 |              | - `respondBy`: An [[rfc3339]] timestamp by which a response is expected (see [Request State Machine](#request-state-machine)). |
 
 The `messageId` identifies the message, not the request, and makes creation idempotent. A retried request MUST reuse
-the same `messageId`. The responder MUST treat a request repeating a (counterparty, `messageId`) pair as the same
-request and MUST return the already-created [=Task Request=] rather than creating a new one. The replay's response is
-identical in form to the original, `HTTP 201` with the same `Location`. The response contains the Request object in
-its current state. A retry arriving after the responder has answered returns `ANSWERED`, not a snapshot of the
-original `RECEIVED` response.
+the same `messageId`. The responder MUST treat a request body repeating a (counterparty, `messageId`) pair as the same
+request and MUST return the already-created [=Task Request=] in its current state rather than creating a new one. A
+retry arriving after the responder has answered returns `ANSWERED`, not a snapshot of the original `RECEIVED` state.
+This applies per request body: one that repeats the `messageId` of a request submitted earlier, in this call or in
+another, is a replay of that request. A call is not a transaction. A requester that receives no response retries the
+call unchanged. Requests created by an earlier attempt are returned in their current state and are not created again.
 
-The response MUST be `HTTP 201 Created` with the `Location` header set to the created request's
-[relative URL](#request-retrieval) and a body containing the [Request object](#request-object), whose `status` reflects
-the request's current state. A responder that declines immediately still creates the request. The response is
-`HTTP 201` with `status` `DECLINED`. The synchronous `201` is the receipt of the demand.
+The body is validated as a unit. It MUST be rejected with `HTTP 400 Bad Request` when any request body violates the
+schema or when two request bodies contain the same `messageId`. A call under an unknown `taskId` MUST be rejected with
+`HTTP 404 Not Found`. A call under a task in a terminal state MUST be rejected with `HTTP 409 Conflict`.
 
-A structurally valid request whose `kind` the responder does not implement MUST NOT be rejected. The responder MUST
-create the request and decline it, with the unsupported `kind` URI in the error's `specifier`. An
-unsupported-kind refusal therefore remains correlatable and distinguishable from a business decline. `HTTP 400` is
-reserved for bodies that violate this specification's request schema. The payload of an unimplemented kind is
-retained as submitted.
+The response MUST be `HTTP 200 OK` with a body containing `requests`, the [Request objects](#request-object) in the
+order of the submitted request bodies, each with its assigned `requestId` and a `status` that reflects the request's
+current state. A responder that declines a request immediately still creates it, and its Request object has `status`
+`DECLINED`. The synchronous `200` is the receipt of the demands.
 
-A request referencing an unknown `taskId` MUST be rejected with `HTTP 404 Not Found`. A request submitted under a
-task in a terminal state MUST be rejected with `HTTP 409 Conflict`.
+A structurally valid request body whose `kind` the responder does not implement MUST NOT be rejected. The responder
+MUST create the request and decline it, with the unsupported `kind` URI in the error's `specifier`, and the call is
+not invalidated. An unsupported-kind refusal therefore remains correlatable and distinguishable from a business
+decline. `HTTP 400` is reserved for bodies that violate this specification's request schema. The payload of an
+unimplemented kind is retained as submitted.
+
+A responder MAY limit the number of requests per call. It MUST accept calls of at least 100 requests. A call that
+exceeds the responder's limit MUST be rejected with `HTTP 413 Content Too Large`. The requester then submits the
+requests in smaller calls.
 
 |                 |                                                                                 |
 |-----------------|-------------------------------------------------------------------------------------|
 | **HTTP Method** | `POST`                                                                          |
 | **URL Path**    | `/tasks/:taskId/requests`                                                       |
 | **Request**     | The request defined above                                                       |
-| **Response**    | `HTTP 201` with a [Request object](#request-object) OR `HTTP 4xx Client Error`  |
+| **Response**    | `HTTP 200` with a [Request Batch object](#request-batch-object) OR `HTTP 4xx Client Error` |
 
-The following is a non-normative example of a request creation body (a settlement claim):
+The following is a non-normative example of a request creation body with one request (a settlement claim):
 
 ```json
 {
-  "messageId": "b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a",
-  "kind": "https://w3id.org/example/requests/settlement-claim/1",
-  "payload": {
-    "claimedAmount": { "value": 418.50, "currency": "EUR" }
-  },
-  "refs": [
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/claim-data/3",
-      "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/attachment/1",
-      "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 2 }
-  ],
-  "respondBy": "2026-12-01T00:00:00Z"
+  "requests": [
+    {
+      "messageId": "b1d5f9e2-3c4b-4f7a-9c3e-2f1e5d6c7b8a",
+      "kind": "https://w3id.org/example/requests/settlement-claim/1",
+      "payload": {
+        "claimedAmount": { "value": 418.50, "currency": "EUR" }
+      },
+      "refs": [
+        { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/claim-data/3",
+          "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
+        { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/attachment/1",
+          "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 2 }
+      ],
+      "respondBy": "2026-12-01T00:00:00Z"
+    }
+  ]
 }
 ```
 
-### Batch Request Creation
-
-The batch endpoint creates several [=Task Requests=] under one task in one call. It is a transport optimization. Each
-request in a batch is created, identified, and answered exactly as if it were submitted alone via
-[Request Creation](#request-creation). Each has its own `requestId`, state, and outcome, so one request in a batch can
-be answered while another is declined.
-
-The body contains `requests`, an array of request creation bodies as defined in [Request Creation](#request-creation).
-The batch is validated as a unit. A batch MUST be rejected with `HTTP 400 Bad Request` when any element violates the
-request creation schema or when two elements contain the same `messageId`. A batch under an unknown `taskId` MUST be
-rejected with `HTTP 404 Not Found`. A batch under a task in a terminal state MUST be rejected with
-`HTTP 409 Conflict`. A structurally valid element whose `kind` the responder does not implement is created and
-declined per [Request Creation](#request-creation). It does not invalidate the batch.
-
-The response MUST be `HTTP 200 OK` with a body containing `requests`, the [Request objects](#request-object) of the
-batch in the order of the submitted elements. Each Request object reflects the request's current state.
-
-A batch is not a transaction. Idempotency applies to each element on its (counterparty, `messageId`) pair. A
-requester that receives no response retries the batch unchanged. Elements created by an earlier attempt are returned
-in their current state and are not created again. An element that repeats the `messageId` of a request submitted
-earlier, alone or in another batch, is a replay of that request.
-
-A responder MAY limit the number of requests per batch. It MUST accept batches of at least 100 requests. A batch
-that exceeds the responder's limit MUST be rejected with `HTTP 413 Content Too Large`. The requester then submits the
-requests in smaller batches.
-
-|              |                                                                                                       |
-|--------------|-----------------------------------------------------------------------------------------------------------|
-| **Schema**   | [JSON Schema](./schemas/request.batch.creation.schema.json)                                            |
-| **Required** | - `requests`: An array of request creation bodies (at least one), each as defined in [Request Creation](#request-creation). |
-
-|                 |                                                                                 |
-|-----------------|-------------------------------------------------------------------------------------|
-| **HTTP Method** | `POST`                                                                          |
-| **URL Path**    | `/tasks/:taskId/requests/batch`                                                 |
-| **Request**     | The batch defined above                                                         |
-| **Response**    | `HTTP 200` with a [Request Batch object](#request-batch-object) OR `HTTP 4xx Client Error` |
-
-The following is a non-normative example of a batch body with two demands:
+The following is a non-normative example with two demands:
 
 ```json
 {
@@ -1106,12 +1082,12 @@ The following is a non-normative example of an `ANSWERED` request:
 
 ### Request Batch Object
 
-The Request Batch object is the response to [Batch Request Creation](#batch-request-creation):
+The Request Batch object is the response to [Request Creation](#request-creation):
 
 |              |                                                                                                       |
 |--------------|-----------------------------------------------------------------------------------------------------------|
 | **Schema**   | [JSON Schema](./schemas/request.batch.schema.json)                                                     |
-| **Required** | - `requests`: The [Request objects](#request-object) of the batch, in the order of the submitted elements. |
+| **Required** | - `requests`: The [Request objects](#request-object) of the call, in the order of the submitted request bodies. |
 
 ### Request List Object
 
