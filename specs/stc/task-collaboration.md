@@ -702,7 +702,9 @@ request under the task.
 The response MUST contain an `ETag` header [[rfc9110]] whose value changes whenever the `status`, any stream `head`,
 or `requestsHead` changes. A request that contains `If-None-Match` with the current value MUST be answered with
 `HTTP 304 Not Modified` and no body. A party polling many tasks therefore transfers a body only for tasks that
-changed.
+changed. The `ETag` MUST be derived from those values, so that every instance of the serving party returns the same
+value for the same state and a value survives a restart. An `ETag` generated per response or per instance would
+defeat `304` behind a load balancer.
 
 The summary MAY contain `pollInterval`, the number of seconds the serving party suggests between polls of this
 task. The value is a hint. A client SHOULD NOT poll more often than the hint while the task is otherwise quiet. A
