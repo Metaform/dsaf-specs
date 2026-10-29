@@ -140,7 +140,7 @@ conclude the exchange permanently. A terminal exchange MUST NOT be reopened, reu
 #### Exchange Retention
 
 How long a party retains a [=Certificate Exchange=] — after it reaches a terminal state, or after it comes to rest at
-`FULFILLED` without acceptance feedback — is defined by deployment profiles, not by this specification. After the
+`FULFILLED` without acceptance feedback — is defined by dataspace profiles, not by this specification. After the
 retention period has elapsed, [Exchange Retrieval](#exchange-retrieval) and the
 [Acceptance Status Query](#acceptance-status-query) MAY respond with `HTTP 404 Not Found` for that exchange. While
 retained, a terminal exchange remains immutable.
@@ -853,7 +853,7 @@ Multiple documents support certificates that consist of several files, for examp
 ## Security and Authorization
 
 All endpoints MUST use HTTPS, that is, HTTP over TLS 1.2 or higher. Authorization mechanisms, including token formats
-and acquisition, are defined by deployment profiles of this specification, consistent with [[dcm]].
+and acquisition, are defined by dataspace profiles, consistent with [[dcm]].
 
 **Sender identity.** Every event carries the asserting party's identity in its `source` attribute (see [[dcm]]).
 The recipient MUST verify that `source` matches the authenticated identity of the sender and MUST reject the event

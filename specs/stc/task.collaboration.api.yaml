@@ -15,7 +15,7 @@ info:
     `fileId` and positioned in their stream by a dense `seq`.
 
     All endpoints MUST use HTTPS (TLS 1.2 or higher). Authorization mechanisms,
-    including token formats and acquisition, are defined by deployment profiles
+    including token formats and acquisition, are defined by dataspace profiles
     of the STC specification.
 servers:
   - url: '{baseUrl}'

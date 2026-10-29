@@ -13,7 +13,7 @@ info:
     not wish to support.
 
     All endpoints MUST use HTTPS (TLS 1.2 or higher). Authorization mechanisms,
-    including token formats and acquisition, are defined by deployment profiles
+    including token formats and acquisition, are defined by dataspace profiles
     of the SCE specification.
 
 servers:

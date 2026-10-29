@@ -131,7 +131,7 @@ Task metadata (`title`, `description`) is immutable. It is set at creation and n
 
 #### Task Retention
 
-Retention is governed by the [[dsp]] agreement or the deployment profile, not by this specification. The retention
+Retention is governed by the [[dsp]] agreement or the [=Dataspace Profile=], not by this specification. The retention
 period starts when the task reaches a terminal state. For a `CLOSED` task this instant is `closure.closedAt`. For a
 `DECLINED` task it is `createdAt`, because the decline is synchronous with creation. After the retention period, the
 endpoints defined by this specification MAY respond with `HTTP 404 Not Found` for the task. Retention continues
@@ -251,7 +251,7 @@ Within a stream, the entries of one `recordId` MUST appear in revision order acr
 entry per record per file. A receiver detecting a violation (an `ADDED` for an existing record, an `UPDATED` or
 `DELETED` for an unknown record, a revision gap, or an entry after `DELETED`) MUST treat the stream as erroneous and
 SHOULD resynchronize from the author's [=Task Index=]. How the error is surfaced between the parties is defined by
-deployment profiles.
+[=Dataspace Profiles=].
 
 Because every entry is self-contained, two consumption strategies are equivalent. This observation is
 non-normative. Replaying a stream's files in sequence order reconstructs the full record set. Searching the files
@@ -1175,7 +1175,7 @@ Where no dataspace profile applies, the file formats of the use case profile are
 ## Security and Authorization
 
 All endpoints MUST use HTTPS, that is, HTTP over TLS 1.2 or higher. Authorization mechanisms, including token formats
-and acquisition, are defined by deployment profiles of this specification, consistent with [[dcm]].
+and acquisition, are defined by [=Dataspace Profiles=], consistent with [[dcm]].
 
 **Sender identity.** Every event contains the asserting party's identity in its `source` attribute (see [[dcm]]).
 The recipient MUST verify that `source` matches the authenticated identity of the sender and MUST reject the event
