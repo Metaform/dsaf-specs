@@ -186,7 +186,9 @@ Parquet). The [envelope fields](#record-entry-envelope) MUST be present as colum
 `revision`, `marker`, and (where used) `refs` and `key`. The record payload occupies the remaining columns. The file
 format a [=Use Case Profile=] or [=Dataspace Profile=] assigns to a stream type MUST fix the name, type, nullability,
 and nesting of every payload column, so that every producer of the stream type writes the same columns (for example,
-as a Parquet message type).
+as a Parquet message type). Every top-level payload column MUST be nullable (in Parquet, `optional`), because a
+`DELETED` entry has no payload. Whether a member is required in a record is a rule of the record schema, not of the
+column.
 
 The envelope columns MUST have the following types: `recordId` a string containing the UUID in canonical lowercase
 form, `revision` a 64-bit signed integer, `marker` a string, and `key` a string. In Parquet, `revision` is an `int64`
