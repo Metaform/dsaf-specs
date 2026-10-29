@@ -1154,8 +1154,8 @@ A [=Use Case Profile=] applies this protocol to a domain. A use case profile MUS
 2. The [=Task Request=] `kind` URIs it introduces, each with a schema for the request payload and the expected
    response record `type`.
 3. Any additional event types, following the rules in [Protocol Events](#protocol-events).
-4. A conformance URI identifying the use case profile and its major version, used for capability declaration (see
-   [Dataspace Protocol Integration](#dataspace-protocol-integration)).
+4. A conformance URI identifying the use case profile and its major version, declared by the dataset that offers the
+   API for the use case profile (see [Dataset Definition](#dataset-definition)).
 5. The closure `outcome` and the decline reason a party uses when its agreement ends (see
    [Agreement Lifecycle](#agreement-lifecycle)).
 
@@ -1207,22 +1207,26 @@ This section defines how the API specified by this document is offered in datasp
 
 ### Dataset Definition
 
-The [Task Collaboration API](#task-collaboration-api) is offered as a single [[dsp]] dataset per [=Participant=]. The
-dataset MUST declare the following `dct:conformsTo` value, which identifies the API and the specification major version:
+The [Task Collaboration API](#task-collaboration-api) is offered as one [[dsp]] dataset per [=Use Case Profile=] a
+[=Participant=] implements. Each dataset MUST declare two `dct:conformsTo` values: the following conformance URI, which
+identifies the API and the specification major version, and the conformance URI of exactly one use case profile.
 
 | Conformance URI                          | API                                                 |
 |------------------------------------------|---------------------------------------------------------|
 | `https://w3id.org/dsaf/stc/v1/api`       | [Task Collaboration API](#task-collaboration-api)   |
 
-Because the protocol is symmetric, each party publishes the dataset and negotiates access to the counterparty's. The
-pair of agreements constitutes the communication relationship under which tasks are opened. The usage policy attached
-to each agreement defines the participation terms, including any retention obligations keyed on task closure.
+All datasets of a participant are served by the same API. An agreement on a dataset is an agreement for its use case
+profile, and every [=Task=] opened under the agreement belongs to that use case profile. Separate datasets also let a
+participant attach a different usage policy to each use case profile.
 
-A participant SHOULD additionally declare each [=Use Case Profile=] it implements by adding the use case profile's
-conformance URI as a further `dct:conformsTo` value on the dataset. This makes the supported stream types, request
-kinds, and event types discoverable from the catalog. The declaration is an optimization, not a correctness requirement.
-An unimplemented `kind` is still answered per [Request Creation](#request-creation), and unknown stream and event types
-are ignored per [Streams](#streams) and [Notifications](#notifications).
+Because the protocol is symmetric, each party publishes a dataset for the use case profile and negotiates access to
+the counterparty's. The pair of agreements constitutes the communication relationship under which tasks of the use
+case profile are opened. The usage policy attached to each agreement defines the participation terms, including any
+retention obligations keyed on task closure.
+
+The datasets make the supported use case profiles, and with them the stream types, request kinds, and event types,
+discoverable from the catalog. An unimplemented `kind` is still answered per [Request Creation](#request-creation),
+and unknown stream and event types are ignored per [Streams](#streams) and [Notifications](#notifications).
 
 A dataset's distribution MUST use the HTTP Transfer Profile defined by Data Plane Signaling [[dps-http]] as its
 `dct:format` (pull direction).
@@ -1256,13 +1260,16 @@ after the agreement for the retention period it defines.
 
 ### Example
 
-The following is a non-normative example of the API dataset:
+The following is a non-normative example of the API dataset for the PCF use case profile:
 
 ```json
 {
   "@type": "dcat:Dataset",
   "@id": "urn:uuid:5ae1c7f2-9b3d-4e6a-8c1f-2d4b6a8c0e1f",
-  "dct:conformsTo": { "@id": "https://w3id.org/dsaf/stc/v1/api" },
+  "dct:conformsTo": [
+    { "@id": "https://w3id.org/dsaf/stc/v1/api" },
+    { "@id": "https://w3id.org/dsaf/pcf/v1/profile" }
+  ],
   "odrl:hasPolicy": [ { "...": "..." } ],
   "dcat:distribution": [{
     "@type": "dcat:Distribution",
