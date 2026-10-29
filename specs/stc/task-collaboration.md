@@ -183,8 +183,14 @@ Two envelope mappings are defined:
 
 **Tabular packaging** serializes [=Record Entries=] as rows (for example, in a columnar format such as Apache
 Parquet). The [envelope fields](#record-entry-envelope) MUST be present as columns named exactly `recordId`,
-`revision`, `marker`, and (where used) `refs` and `key`. The record payload occupies the remaining columns as
-defined by the stream's schema.
+`revision`, `marker`, and (where used) `refs` and `key`. The record payload occupies the remaining columns. The file
+format a [=Use Case Profile=] or [=Dataspace Profile=] assigns to a stream type MUST fix the name, type, nullability,
+and nesting of every payload column, so that every producer of the stream type writes the same columns (for example,
+as a Parquet message type).
+
+The envelope columns MUST have the following types: `recordId` a string containing the UUID in canonical lowercase
+form, `revision` a 64-bit signed integer, `marker` a string, and `key` a string. In Parquet, `revision` is an `int64`
+column, and the string columns are `binary` columns annotated with the `STRING` logical type.
 
 The `refs` column, when present, MUST contain the entry's [=Pointers=] serialized as a JSON array (in Parquet, a
 string or binary column, RECOMMENDED to be annotated with the JSON logical type). Payload fields SHOULD be
