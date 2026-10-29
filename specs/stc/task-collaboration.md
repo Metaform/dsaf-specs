@@ -647,6 +647,11 @@ the bound task on `taskId` and `createdAt`. The response to a replay is identica
 `HTTP 201` included. A creation repeating a bound `taskId` with a different `createdAt` is a collision with a
 different task and MUST be rejected with `HTTP 409 Conflict`.
 
+A receiving party that cannot decide on a creation at once, for example because it waits for a local admission
+decision, MAY answer `HTTP 503 Service Unavailable` with a `Retry-After` header. An owner that receives a `5xx`
+response, or no response, SHOULD retry the creation with the same Task object and honor `Retry-After` when present.
+Because creation is idempotent, a retry never creates a second binding.
+
 The receiving party MAY decline a task it will not participate in. The task is then created in the `DECLINED`
 state (see [Task State Machine](#task-state-machine)), and both parties retain the binding. The creation response
 contains the [Task object](#task-object) with `status` `DECLINED` and the reasons for the decline in its `errors`
@@ -657,7 +662,7 @@ array.
 | **HTTP Method** | `POST`                                                                                                              |
 | **URL Path**    | `/tasks`                                                                                                            |
 | **Request**     | The [Task object](#task-object), with `status` `OPEN`                                                               |
-| **Response**    | `HTTP 201` with the [Task object](#task-object), whose `status` is `OPEN` or `DECLINED`, OR `HTTP 4xx Client Error` |
+| **Response**    | `HTTP 201` with the [Task object](#task-object), whose `status` is `OPEN` or `DECLINED`, OR `HTTP 4xx Client Error`, OR `HTTP 503 Service Unavailable` |
 
 ### Task Retrieval
 

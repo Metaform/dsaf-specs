@@ -45,7 +45,10 @@ paths:
         the response body contains the Task object with `status` `DECLINED`
         and the reasons for the decline in its `errors` array. Both parties
         retain the binding. Task metadata is immutable. It is set at creation
-        and never updated.
+        and never updated. A receiving party that cannot decide at once may
+        answer `HTTP 503` with `Retry-After`. An owner that receives a `5xx`
+        response, or no response, should retry the creation with the same
+        Task object.
       operationId: createTask
       requestBody:
         required: true
@@ -84,6 +87,15 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          description: >-
+            The receiving party cannot decide on the creation at once. The
+            owner should retry the creation with the same Task object.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
   /tasks/{taskId}:
     get:
       summary: Retrieve a Task
