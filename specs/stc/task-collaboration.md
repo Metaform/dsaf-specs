@@ -9,8 +9,9 @@ STC is a [=Composing Specification=] of [Dataspace Core Messaging](../dcm/core-m
 defined in this specification MUST conform to that specification.
 
 STC is domain-agnostic. The record schemas, request kinds, and packaging formats used in a deployment are defined by
-[=Profiles=] (see [Profiles](#profiles)). Quality management, warranty settlement, and root cause analysis are
-examples of profiles.
+[=Use Case Profiles=] (see [Use Case Profiles](#use-case-profiles)). A [=Dataspace Profile=] MAY adapt them to the
+rules of a dataspace (see [Dataspace Profiles](#dataspace-profiles)). Quality management, warranty settlement, and
+root cause analysis are examples of use case profiles.
 
 ## Terminology
 
@@ -34,8 +35,10 @@ The following terms are used to describe concepts in this specification. The ter
   a [=Task=], served by that participant.
 - <dfn>Task Request</dfn>: A resource under a [=Task=], owned by the responder, that represents a request by the
   counterparty to perform an action, with observable state.
-- <dfn>Profile</dfn>: A specification built on STC that defines the record schemas, request kinds, packaging
-  formats, and additional domain event types.
+- <dfn>Use Case Profile</dfn>: A specification built on STC that defines the record schemas, request kinds,
+  packaging formats, and additional domain event types of a domain.
+- <dfn>Dataspace Profile</dfn>: A specification that applies one or more [=Use Case Profiles=] to the rules of a
+  dataspace.
 
 ## Conformance
 
@@ -96,8 +99,8 @@ A task is declined in the creation response (see [Task Creation](#task-creation)
 [`TaskStatus` event](#task-status-event) and is observable at any time via [Task Retrieval](#task-retrieval).
 
 The decline is recorded on the task. When the task is `DECLINED`, the [Task object](#task-object) MUST contain a
-non-empty `errors` array of [error objects](#error-object) with the reasons for the decline. A [=Profile=] MAY define
-decline reason URIs for the error `specifier`.
+non-empty `errors` array of [error objects](#error-object) with the reasons for the decline. A [=Use Case Profile=] MAY
+define decline reason URIs for the error `specifier`.
 
 A task in a terminal state is unmodifiable. A [=Participant=] MUST NOT append [=Files=] to the task's [=Streams=] and MUST
 NOT submit [=Task Requests=] under it. A request submitted under a terminal task MUST be rejected with
@@ -106,8 +109,8 @@ is a new task with a new `taskId`.
 
 The [=Task Owner=] SHOULD NOT close a task while a [=Task Request=]
 under it is not terminal, because the request can no longer be answered after closure. [=Task Requests=] that are
-nevertheless not terminal at closure time SHOULD be concluded. How they are concluded is defined by [=Profiles=].
-The [=Task Owner=] concludes a request it submitted itself by cancelling it (see
+nevertheless not terminal at closure time SHOULD be concluded. How they are concluded is defined by
+[=Use Case Profiles=]. The [=Task Owner=] concludes a request it submitted itself by cancelling it (see
 [Request Cancellation](#request-cancellation)).
 
 Closure is unilateral. The rule above binds the [=Task Owner=] only. A [=Task Participant=] MUST accept a closure
@@ -118,11 +121,11 @@ an implementation's management layer may refuse to close a task with non-termina
 overridden).
 
 Closure is recorded on the task. When the task is `CLOSED`, the [Task object](#task-object) MUST contain a `closure`
-member. The member records the time of closure and, optionally, a profile-defined `outcome`, a human-readable
-`reason`, and [=Pointers=] to the records that conclude the collaboration (for example, a final report). Outcomes do
-not add states to the task. Every closure ends in the single `CLOSED` state, and the `outcome` value on the `closure`
-record distinguishes how it concluded (for example, resolved, aborted, or superseded). The outcome values are defined
-by [=Profiles=].
+member. The member records the time of closure and, optionally, an `outcome` defined by the [=Use Case Profile=], a
+human-readable `reason`, and [=Pointers=] to the records that conclude the collaboration (for example, a final report).
+Outcomes do not add states to the task. Every closure ends in the single `CLOSED` state, and the `outcome` value on the
+`closure` record distinguishes how it concluded (for example, resolved, aborted, or superseded). The outcome values are
+defined by [=Use Case Profiles=].
 
 Task metadata (`title`, `description`) is immutable. It is set at creation and never updated.
 
@@ -171,9 +174,11 @@ file means the record is unchanged.
 
 #### Packaging
 
-The serialization of a [=File=] is declared by its [=Stream=]'s type. The [=Profile=] assigns each stream type its
-exact file format, identified by a media type, and the envelope mapping the format follows. Both parties therefore
-know a file's format and its `Content-Type` from the stream type alone. Nothing is negotiated or inferred per file.
+The serialization of a [=File=] is declared by its [=Stream=]'s type. The [=Use Case Profile=] assigns each stream
+type its exact file format, identified by a media type, and the envelope mapping the format follows. A
+[=Dataspace Profile=] MAY replace the file format of a stream type (see [Dataspace Profiles](#dataspace-profiles)).
+Where one applies, files follow it. Both parties therefore know a file's format and its `Content-Type` from the
+stream type and the applicable dataspace profile. Nothing is negotiated or inferred per file.
 Two envelope mappings are defined:
 
 **Tabular packaging** serializes [=Record Entries=] as rows (for example, in a columnar format such as Apache
@@ -184,7 +189,8 @@ defined by the stream's schema.
 The `refs` column, when present, MUST contain the entry's [=Pointers=] serialized as a JSON array (in Parquet, a
 string or binary column, RECOMMENDED to be annotated with the JSON logical type). Payload fields SHOULD be
 represented as individually typed columns, natively nested where the format supports it, rather than as a single
-serialized-JSON column. A profile MAY designate specific irregular payload fields as JSON columns.
+serialized-JSON column. A use case profile or a dataspace profile MAY designate specific irregular payload fields
+as JSON columns.
 
 **Schema evolution within a stream.** The stream `type` pins the record schema's major version. Files later in a
 stream MAY reflect a backward-compatible minor revision of that schema. Under tabular packaging, this means
@@ -313,7 +319,7 @@ conditional request, so that a party can detect missed events for many tasks at 
 
 A [=Task Request=] is opened by one party to request the other to perform an action, for example to evaluate a
 settlement claim or to perform an 8D analysis. The action is identified by the request's `kind`, a URI defined by a
-[=Profile=]. The request contains a payload conforming to the kind and optional [=Pointers=] to the records it
+[=Use Case Profile=]. The request contains a payload conforming to the kind and optional [=Pointers=] to the records it
 concerns. The responder owns the request and serves its state at any time (see
 [Request State Machine](#request-state-machine)). The responder answers the request with the action's result,
 contributed as a [=Record=], or declines it with reasons. The requester MAY cancel a request it no longer needs
@@ -360,8 +366,8 @@ represent business-level outcomes only. Technical and transport failures are not
 unilateral. The responder does not decide whether to accept it. From the moment the responder records the
 cancellation, it MUST NOT answer or decline the request. Records the responder has published, or publishes later,
 remain ordinary contributions to its streams but are not the request's response. The consequences of a
-cancellation, such as costs the responder has already incurred, are defined by [=Profiles=] or the governing [[dsp]]
-agreement.
+cancellation, such as costs the responder has already incurred, are defined by [=Use Case Profiles=] or the governing
+[[dsp]] agreement.
 
 A terminal request MUST NOT be reopened or transitioned further. A renewed demand, for example, a resubmitted claim,
 is a new [=Task Request=].
@@ -370,19 +376,19 @@ The response content is a [=Record=]. The responder contributes it to a stream. 
 it by [=Pointer=]. The responder MUST publish the response record, listed in its [=Task Index=], no later than it
 reports `ANSWERED`, so the response pointer always resolves. The request's `response` pointer MUST be revision-pinned to the revision that answered it (see
 [Request Object](#request-object)), so later revisions of the response record never alter the answer as given.
-Whether the response record may be revised after the request is answered is defined by the [=Profile=]. A profile MAY
-declare a response record type final once cited by a response. 
+Whether the response record may be revised after the request is answered is defined by the [=Use Case Profile=]. A use
+case profile MAY declare a response record type final once cited by a response. 
 
 A request MAY contain a `respondBy` deadline. The deadline is informational and does not transition the request.
-Whether a request is overdue is a decision the requester makes locally. Deadline consequences are defined by [=Profiles=]
-or the governing [[dsp]] agreement.
+Whether a request is overdue is a decision the requester makes locally. Deadline consequences are defined by
+[=Use Case Profiles=] or the governing [[dsp]] agreement.
 
 ## Identity
 
 A [=Participant=] is identified by its verified identity. This is the identity authenticated on the transport
 channel and contained in an [=Event=]'s `source` attribute (see [[dcm]]), for example, a Decentralized Identifier
 (DID) [[did-core]]. Where a dataspace assigns distinct participant identifiers, the `dataspaceidentifier` extension
-attribute of [[dcm]] applies, and [=Profiles=] MAY require it.
+attribute of [[dcm]] applies, and [=Use Case Profiles=] MAY require it.
 
 ## Protocol Events
 
@@ -395,14 +401,14 @@ following event types are defined:
 | `org.dsaf.stc.FilesAppended.v1` | Author → Counterparty | Announces [=Files=] appended to the author's [=Streams=] |
 | `org.dsaf.stc.RequestStatus.v1` | Responder → Requester | Communicates the terminal state of a [=Task Request=]    |
 
-[=Profiles=] MAY define additional event types (for example, a domain alert). A profile-defined event that concerns
-records MUST reference them as [=Pointers=] and MUST be scoped to a task by containing the `taskId` in its data and as
-its `subject`.
+[=Use Case Profiles=] MAY define additional event types (for example, a domain alert). A use case profile event that
+concerns records MUST reference them as [=Pointers=] and MUST be scoped to a task by containing the `taskId` in its data
+and as its `subject`.
 
 An event MUST be rejected with `HTTP 400 Bad Request` when its `source` is not the party its type defines as the
-sender. The sender of each core event is defined in its section below, and a profile event defines its sender the
-same way. The rule defines receiver behavior only. A role-mismatched event cannot corrupt state, because a party
-never updates state it owns from an inbound event.
+sender. The sender of each core event is defined in its section below, and a use case profile event defines its
+sender the same way. The rule defines receiver behavior only. A role-mismatched event cannot corrupt state, because a
+party never updates state it owns from an inbound event.
 
 ### Task Status Event
 
@@ -722,7 +728,8 @@ If the `taskId` is unknown, the endpoint MUST respond with `HTTP 404 Not Found`.
 ### File Retrieval
 
 The file endpoint returns the content of a [=File=] published by the serving party. The response `Content-Type` MUST
-be the media type the [=Profile=] declares for the stream type's file format (see [Packaging](#packaging)).
+be the media type of the stream type's file format, as declared by the [=Use Case Profile=] or the applicable
+[=Dataspace Profile=] (see [Packaging](#packaging)).
 
 The endpoint SHOULD support HTTP range requests [[rfc9110]], and a server that does SHOULD include
 `Accept-Ranges: bytes` in file responses. Because [=Files=] are immutable, a resumed or partial download is always
@@ -755,7 +762,7 @@ an array of request bodies. Each request body contains a `messageId`, the reques
 | **Required** | - `requests`: An array of at least one request body.                                                  |
 |              | Each request body contains:                                                                            |
 |              | - `messageId`: A unique identifier for this message. MUST be a UUID [[rfc9562]].                       |
-|              | - `kind`: A URI identifying the request kind and the schema of `payload`, defined by a [=Profile=].    |
+|              | - `kind`: A URI identifying the request kind and the schema of `payload`, defined by a [=Use Case Profile=].    |
 |              | - `payload`: The transactional content of the demand, conforming to `kind`.                            |
 | **Optional** | - `refs`: An array of [=Pointers=] citing the records the demand concerns or rests on. Pointers SHOULD be revision-pinned. |
 |              | - `respondBy`: An [[rfc3339]] timestamp by which a response is expected (see [Request State Machine](#request-state-machine)). |
@@ -914,8 +921,9 @@ responder of, a party MUST respond with `HTTP 404 Not Found`.
 
 ### Notifications
 
-The `notifications` endpoint accepts the events defined in [Protocol Events](#protocol-events) and profile-defined
-events. The request body is a single [=Event=] or a batch (a JSON array) as defined by [[dcm]].
+The `notifications` endpoint accepts the events defined in [Protocol Events](#protocol-events) and events
+defined by [=Use Case Profiles=]. The request body is a single [=Event=] or a batch (a JSON array) as defined by
+[[dcm]].
 
 An event that conforms to [[dcm]] but whose `type` the receiver does not implement MUST be accepted and MAY be
 ignored. A batch MUST NOT be rejected because it contains events of unknown types. (Per [[dcm]], batch acceptance
@@ -927,7 +935,7 @@ An event referencing a `taskId` for which the receiver holds no binding MUST be 
 |-----------------|-------------------------------------------------------------------------------|
 | **HTTP Method** | `POST`                                                                    |
 | **URL Path**    | `/notifications`                                                          |
-| **Request**     | An [=Event=] defined by this specification or a [=Profile=], or a batch   |
+| **Request**     | An [=Event=] defined by this specification or a [=Use Case Profile=], or a batch   |
 | **Response**    | `HTTP 204` OR `HTTP 4xx Client Error`                                     |
 
 ## Data Model
@@ -950,7 +958,7 @@ The `closure` object:
 |              |                                                                                                       |
 |--------------|-----------------------------------------------------------------------------------------------------------|
 | **Required** | - `closedAt`: [[rfc3339]] timestamp of the closure. Retention obligations key on this instant.         |
-| **Optional** | - `outcome`: A profile-defined token or URI qualifying the closure (for example resolved, aborted).    |
+| **Optional** | - `outcome`: A token or URI defined by the [=Use Case Profile=] qualifying the closure (for example resolved, aborted). |
 |              | - `reason`: A human-readable explanation of the closure.                                               |
 |              | - `refs`: An array of [=Pointers=] to the records that conclude the collaboration. Pointers MUST be revision-pinned, because the closure is an as-of assertion. |
 
@@ -982,7 +990,8 @@ Each file entry:
 | **Optional** | - `size`: The file's length in bytes. RECOMMENDED.                                                     |
 |              | - `entryCount`: The number of [=Record Entries=] in the file. RECOMMENDED.                             |
 
-A file entry contains no media type. The file format is declared by the stream type (see [Packaging](#packaging)).
+A file entry contains no media type. The file format is given by the stream type and the applicable
+[=Dataspace Profile=] (see [Packaging](#packaging)).
 
 The following is a non-normative example:
 
@@ -1128,26 +1137,40 @@ The following is a non-normative example of a page of `ANSWERED` requests:
 }
 ```
 
-## Profiles
+## Use Case Profiles
 
-A [=Profile=] binds this protocol to a domain. A profile MUST define:
+A [=Use Case Profile=] applies this protocol to a domain. A use case profile MUST define:
 
 1. The stream `type` URIs it introduces, each with a JSON schema (or equivalent) for the record payload and its
    [packaging](#packaging): the exact file format as a media type, and the envelope mapping it follows.
 2. The [=Task Request=] `kind` URIs it introduces, each with a schema for the request payload and the expected
    response record `type`.
 3. Any additional event types, following the rules in [Protocol Events](#protocol-events).
-4. A conformance URI identifying the profile and its major version, used for capability declaration (see
+4. A conformance URI identifying the use case profile and its major version, used for capability declaration (see
    [Dataspace Protocol Integration](#dataspace-protocol-integration)).
 5. The closure `outcome` and the decline reason a party uses when its agreement ends (see
    [Agreement Lifecycle](#agreement-lifecycle)).
 
-A profile MAY additionally define retention and deletion obligations keyed on task closure, deadline consequences for
-`respondBy`, the consequences of a request cancellation, and constraints on which party may open tasks or submit
-particular request kinds.
+A use case profile MAY additionally define retention and deletion obligations keyed on task closure, deadline
+consequences for `respondBy`, the consequences of a request cancellation, and constraints on which party may open tasks
+or submit particular request kinds.
 
-Profiles version their schemas independently of this specification. A record schema's major version is part of the
-stream `type`, so a breaking schema change produces a new stream rather than a new protocol version.
+Use case profiles version their schemas independently of this specification. A record schema's major version is part of
+the stream `type`, so a breaking schema change produces a new stream rather than a new protocol version.
+
+## Dataspace Profiles
+
+A [=Dataspace Profile=] applies one or more [=Use Case Profiles=] to the rules of a dataspace. For each use case
+profile it names, together with the minor version it covers, a dataspace profile MAY:
+
+- replace the file format of a stream type, including its media type and, under tabular packaging, its columns,
+- add fields to the records of a stream type,
+- restrict records and request payloads to a subset of those the use case profile allows.
+
+A dataspace profile MUST represent every field of the use case profile version it covers, MUST state each
+restriction, and MUST NOT change the meaning of a field defined by the use case profile. Fields it adds are part of
+the record, so a change to such a field is a new revision (see [Identity and Versioning](#identity-and-versioning)).
+Where no dataspace profile applies, the file formats of the use case profile are used.
 
 ## Security and Authorization
 
@@ -1187,11 +1210,11 @@ Because the protocol is symmetric, each party publishes the dataset and negotiat
 pair of agreements constitutes the communication relationship under which tasks are opened. The usage policy attached
 to each agreement defines the participation terms, including any retention obligations keyed on task closure.
 
-A participant SHOULD additionally declare each [=Profile=] it implements by adding the profile's conformance URI as a
-further `dct:conformsTo` value on the dataset. This makes the supported stream types, request kinds, and event types
-discoverable from the catalog. The declaration is an optimization, not a correctness requirement. An unimplemented
-`kind` is still answered per [Request Creation](#request-creation), and unknown stream and event types are ignored
-per [Streams](#streams) and [Notifications](#notifications).
+A participant SHOULD additionally declare each [=Use Case Profile=] it implements by adding the use case profile's
+conformance URI as a further `dct:conformsTo` value on the dataset. This makes the supported stream types, request
+kinds, and event types discoverable from the catalog. The declaration is an optimization, not a correctness requirement.
+An unimplemented `kind` is still answered per [Request Creation](#request-creation), and unknown stream and event types
+are ignored per [Streams](#streams) and [Notifications](#notifications).
 
 A dataset's distribution MUST use the HTTP Transfer Profile defined by Data Plane Signaling [[dps-http]] as its
 `dct:format` (pull direction).
@@ -1213,12 +1236,12 @@ treat the end of a transfer process as the end of the agreement.
 A party's obligations under an agreement end when the agreement ends, whether by expiry or by termination. When an
 agreement ends, the party that holds it SHOULD close every open [=Task=] it owns under that agreement and SHOULD
 decline every non-terminal [=Task Request=] it is the responder of under those tasks. The closure `outcome` and the
-decline reason are defined by the [=Profile=] (see [Profiles](#profiles)). A party MUST NOT append [=Files=] or
-submit [=Task Requests=] under an agreement that has ended.
+decline reason are defined by the [=Use Case Profile=] (see [Use Case Profiles](#use-case-profiles)). A party MUST NOT
+append [=Files=] or submit [=Task Requests=] under an agreement that has ended.
 
 A new agreement between the same parties starts new [=Tasks=]. Nothing is carried over from tasks under the
-previous agreement, because its contributions were made under that agreement's usage policy. A profile MAY define
-how a successor task refers to its predecessor, for example through the `closure` `reason`.
+previous agreement, because its contributions were made under that agreement's usage policy. A use case profile MAY
+define how a successor task refers to its predecessor, for example through the `closure` `reason`.
 
 Retention (see [Task Retention](#task-retention)) is the last obligation under an ended agreement and continues
 after the agreement for the retention period it defines.
