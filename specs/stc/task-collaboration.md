@@ -479,7 +479,7 @@ The `subject` attribute of the event MUST be set to the `taskId`.
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Schema**   | [JSON Schema](./schemas/files.appended.event.schema.json)                                                                                    |
 | **Required** | - `taskId`: The task the appended files belong to.                                                                                           |
-|              | - `streams`: An array of objects, each containing a stream identifier `stream`, its `type`, and its appended `files` as [Task Index file entries](#task-index-object). |
+|              | - `streams`: An array of objects, each containing a stream identifier `stream`, its `type`, and its appended `files` as [Task Index file entries](#task-index-object), at least one per stream. A stream with no new file is not announced. |
 
 The following is a non-normative example:
 

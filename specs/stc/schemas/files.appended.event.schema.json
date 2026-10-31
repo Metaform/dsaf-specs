@@ -3,7 +3,7 @@
   "title": "FilesAppendedEvent",
   "allOf": [
     {
-      "$ref": "../../dcm/schemas/event.schema.json"
+      "$ref": "./event.schema.json"
     },
     {
       "type": "object",
@@ -30,7 +30,18 @@
               "type": "array",
               "minItems": 1,
               "items": {
-                "$ref": "./common.schema.json#/definitions/StreamFiles"
+                "allOf": [
+                  {
+                    "$ref": "./common.schema.json#/definitions/StreamFiles"
+                  },
+                  {
+                    "properties": {
+                      "files": {
+                        "minItems": 1
+                      }
+                    }
+                  }
+                ]
               }
             }
           }
