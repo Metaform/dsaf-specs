@@ -1081,7 +1081,7 @@ The Request object is the representation of a [=Task Request=]:
 |              | - `payload`: The request payload as submitted.                                                         |
 | **Optional** | - `refs`: The [=Pointers=] as submitted.                                                               |
 |              | - `respondBy`: As submitted.                                                                           |
-|              | - `response`: MUST be present when `status` is `ANSWERED`, absent otherwise. Contains `record`, a [=Pointer=] to the response record (revision-pinned to the revision that answered the request), and MAY contain additional [=Pointers=] in `supporting`. The `record` pointer's `author` MUST be the responder, because the answer is the responder's own assertion. `supporting` pointers are unconstrained. |
+|              | - `response`: MUST be present when `status` is `ANSWERED`, absent otherwise. Contains `record`, a [=Pointer=] to the response record (revision-pinned to the revision that answered the request), and MAY contain additional [=Pointers=] in `supporting`. The `record` pointer's `stream` MUST be listed in the responder's [=Task Index=], because the answer is the responder's own assertion. `supporting` pointers are unconstrained. |
 |              | - `errors`: An array of [error objects](#error-object). MUST be present and non-empty when `status` is `DECLINED`. |
 
 The following is a non-normative example of an `ANSWERED` request:

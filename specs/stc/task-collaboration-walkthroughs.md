@@ -44,7 +44,7 @@ Streams are identified by the `stream` identifiers their publishers assigned. Th
 | `e5f0180b-d6c4-56dd-971d-34786df39791` | Supplier | `https://w3id.org/dsaf/pcf/v1/pcf` |
 
 HTTP examples elide authorization headers. Every call runs over the authenticated channel, and the caller's
-verified identity is what `author` and event `source` fields must match. Parquet files are shown as tables, with
+verified identity is what event `source` fields must match. Parquet files are shown as tables, with
 envelope columns first and `refs` serialized as a JSON column. Record identifiers are UUIDs, abbreviated in the
 tables. Prose and the envelope `key` member contain the readable domain names (claim-b, analysis-77, …).
 
