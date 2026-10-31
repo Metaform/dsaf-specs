@@ -3,18 +3,13 @@
   "title": "Pointer",
   "type": "object",
   "required": [
-    "author",
-    "type",
+    "stream",
     "record"
   ],
   "additionalProperties": false,
   "properties": {
-    "author": {
-      "type": "string",
-      "minLength": 1
-    },
-    "type": {
-      "$ref": "./common.schema.json#/definitions/StreamType"
+    "stream": {
+      "$ref": "./common.schema.json#/definitions/Uuid"
     },
     "record": {
       "$ref": "./common.schema.json#/definitions/RecordId"

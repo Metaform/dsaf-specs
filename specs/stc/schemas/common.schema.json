@@ -72,17 +72,20 @@
     "StreamFiles": {
       "type": "object",
       "required": [
+        "stream",
         "type",
         "files"
       ],
       "additionalProperties": false,
       "properties": {
+        "stream": {
+          "$ref": "#/definitions/Uuid"
+        },
         "type": {
           "$ref": "#/definitions/StreamType"
         },
         "files": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "$ref": "#/definitions/FileEntry"
           }
@@ -92,11 +95,15 @@
     "StreamHead": {
       "type": "object",
       "required": [
+        "stream",
         "type",
         "head"
       ],
       "additionalProperties": false,
       "properties": {
+        "stream": {
+          "$ref": "#/definitions/Uuid"
+        },
         "type": {
           "$ref": "#/definitions/StreamType"
         },

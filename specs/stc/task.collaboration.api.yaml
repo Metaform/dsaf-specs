@@ -143,10 +143,9 @@ paths:
         - name: stream
           in: query
           required: false
-          description: A stream `type` URI; limits the response to that stream.
+          description: A stream identifier; limits the response to that stream.
           schema:
-            type: string
-            format: uri
+            $ref: '#/components/schemas/Uuid'
         - name: fromSeq
           in: query
           required: false
@@ -314,8 +313,7 @@ paths:
                           value: 418.5
                           currency: EUR
                       refs:
-                        - author: did:web:oem.example.com
-                          type: https://w3id.org/example/schemas/claim-data/3
+                        - stream: d484bd4c-e566-5c53-860f-62d19f16bd3c
                           record: b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e
                           revision: 1
                           seq: 1
@@ -678,10 +676,13 @@ components:
     StreamFiles:
       type: object
       required:
+        - stream
         - type
         - files
       additionalProperties: false
       properties:
+        stream:
+          $ref: '#/components/schemas/Uuid'
         type:
           $ref: '#/components/schemas/StreamType'
         files:
@@ -692,10 +693,13 @@ components:
     StreamHead:
       type: object
       required:
+        - stream
         - type
         - head
       additionalProperties: false
       properties:
+        stream:
+          $ref: '#/components/schemas/Uuid'
         type:
           $ref: '#/components/schemas/StreamType'
         head:
@@ -728,16 +732,12 @@ components:
       title: Pointer
       type: object
       required:
-        - author
-        - type
+        - stream
         - record
       additionalProperties: false
       properties:
-        author:
-          type: string
-          minLength: 1
-        type:
-          $ref: '#/components/schemas/StreamType'
+        stream:
+          $ref: '#/components/schemas/Uuid'
         record:
           $ref: '#/components/schemas/RecordId'
         revision:

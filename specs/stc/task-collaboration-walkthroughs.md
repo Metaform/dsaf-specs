@@ -31,6 +31,18 @@ The examples use the following stream types and request kinds:
 
 The examples also use the domain event `org.dsaf.quality.EarlyWarning.v1`.
 
+Streams are identified by the `stream` identifiers their publishers assigned. The examples use these:
+
+| Stream | Publisher | Type |
+| ------ | --------- | ---- |
+| `7bf8f044-1fe7-528a-bcde-b4c82a45034f` | OEM | `https://w3id.org/dsaf/quality/v1/complaint` |
+| `27101d70-d8a7-5afe-8d13-95ffb6f5839a` | OEM | `https://w3id.org/dsaf/warranty/v1/claim` |
+| `2d806378-8149-525a-a503-517d7f06d1a4` | OEM | `https://w3id.org/dsaf/quality/v1/attachment` |
+| `b4503c01-4ff2-54a8-9e1e-af1cf05e4ec0` | Supplier | `https://w3id.org/dsaf/quality/v1/part-analysis` |
+| `570e0c01-b7b3-5ab8-b7c6-0d07eaf93d6c` | Supplier | `https://w3id.org/dsaf/warranty/v1/verification` |
+| `ee108a21-2cd4-551f-be11-a21861a5da94` | Supplier | `https://w3id.org/dsaf/quality/v1/report-8d` |
+| `e5f0180b-d6c4-56dd-971d-34786df39791` | Supplier | `https://w3id.org/dsaf/pcf/v1/pcf` |
+
 HTTP examples elide authorization headers. Every call runs over the authenticated channel, and the caller's
 verified identity is what `author` and event `source` fields must match. Parquet files are shown as tables, with
 envelope columns first and `refs` serialized as a JSON column. Record identifiers are UUIDs, abbreviated in the
@@ -126,6 +138,7 @@ Content-Type: application/cloudevents+json
     "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
     "streams": [
       {
+        "stream": "7bf8f044-1fe7-528a-bcde-b4c82a45034f",
         "type": "https://w3id.org/dsaf/quality/v1/complaint",
         "files": [
           { "seq": 0, "fileId": "8841a0b1-c2d3-4e5f-8a6b-7c8d9e0f1a2b",
@@ -157,9 +170,9 @@ The warning is an informational event referencing the suspect records by pointer
     "severity": "major",
     "information": "DTC C1234 occurring at 4x baseline in the referenced claims.",
     "records": [
-      { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
+      { "stream": "7bf8f044-1fe7-528a-bcde-b4c82a45034f",
         "record": "3f1d9a52-7c84-4b6e-9d12-aa01bc23de45", "revision": 0, "seq": 0 },
-      { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
+      { "stream": "7bf8f044-1fe7-528a-bcde-b4c82a45034f",
         "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 0, "seq": 0 }
     ]
   }
@@ -189,7 +202,7 @@ photo documenting it:
 
 | recordId | key | revision | marker | refs | result | finding |
 |---|---|---|---|---|---|---|
-| a77f0e1d-… | analysis-77 | 0 | ADDED | `[{"author":"did:web:oem.example.com","type":"…/complaint","record":"b7e3d2c1-…","revision":0,"seq":0}]` | defect-confirmed | corrosion at connector pin 4 |
+| a77f0e1d-… | analysis-77 | 0 | ADDED | `[{"stream": "7bf8f044-1fe7-528a-bcde-b4c82a45034f","record":"b7e3d2c1-…","revision":0,"seq":0}]` | defect-confirmed | corrosion at connector pin 4 |
 
 *Attachment stream, file seq 0*, a zip with one record (envelope sidecar and payload):
 
@@ -209,7 +222,7 @@ photo documenting it:
   "mediaType": "image/jpeg",
   "payloadEntry": "9af0e1d2-c3b4-4a5f-8b6c-7d8e9f0a1b2c_0.jpg",
   "refs": [
-    { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/quality/v1/part-analysis",
+    { "stream": "b4503c01-4ff2-54a8-9e1e-af1cf05e4ec0",
       "record": "a77f0e1d-2c3b-4a59-8e67-45d2c1b0a9f8", "revision": 0, "seq": 0 }
   ]
 }
@@ -258,7 +271,7 @@ The countermeasure is confirmed effective. The owner transitions the task and pu
         "outcome": "https://w3id.org/dsaf/quality/v1/outcome/resolved",
         "reason": "Root cause confirmed; countermeasure effective from batch 2271.",
         "refs": [
-          { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/quality/v1/part-analysis",
+          { "stream": "b4503c01-4ff2-54a8-9e1e-af1cf05e4ec0",
             "record": "a77f0e1d-2c3b-4a59-8e67-45d2c1b0a9f8", "revision": 0 }
       ]
     }
@@ -323,9 +336,9 @@ POST https://tier1.example.com/stc/tasks/5b2e9c71-…/requests
         "repairReference": "WC-2026-0815"
       },
       "refs": [
-        { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/warranty/v1/claim",
+        { "stream": "27101d70-d8a7-5afe-8d13-95ffb6f5839a",
           "record": "6d2f8a14-3b5c-4e7d-9a1f-2c4e6b8d0f13", "revision": 0, "seq": 0 },
-        { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/attachment",
+        { "stream": "2d806378-8149-525a-a503-517d7f06d1a4",
           "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 0 }
       ],
       "respondBy": "2026-12-01T00:00:00Z"
@@ -371,7 +384,7 @@ The verification goes into the supplier's verification stream, file seq 0:
 
 | recordId   | key               | revision | marker | refs                                                                                                     | acceptedQuota | grounds                                                                       |
 | ---------- | ----------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------- |
-| 2041fa1b-… | verification-2041 | 0        | ADDED  | `[{"author":"did:web:oem.example.com","type":"…/claim","record":"6d2f8a14-…","revision":0,"seq":0}]` | 0.60          | corrosion consistent with supplied-lot defect; labor rate partially contested |
+| 2041fa1b-… | verification-2041 | 0        | ADDED  | `[{"stream": "27101d70-d8a7-5afe-8d13-95ffb6f5839a","record":"6d2f8a14-…","revision":0,"seq":0}]` | 0.60          | corrosion consistent with supplied-lot defect; labor rate partially contested |
 
 `FilesAppended` announces it. The spec requires publication no later than the transition, so the pointer bound
 next can never dangle.
@@ -394,8 +407,7 @@ The supplier transitions `RECEIVED → ANSWERED`, binding the response pointer, 
     "requestId": "8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
     "status": "ANSWERED",
     "response": {
-      "record": { "author": "did:web:tier1.example.com",
-                  "type": "https://w3id.org/dsaf/warranty/v1/verification",
+      "record": { "stream": "570e0c01-b7b3-5ab8-b7c6-0d07eaf93d6c",
                   "record": "2041fa1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b", "revision": 0, "seq": 0 }
     }
   }
@@ -463,9 +475,9 @@ POST https://tier1.example.com/stc/tasks/430f56d3-…/requests
       "kind": "https://w3id.org/dsaf/quality/v1/8d-request",
       "payload": { "problem": "Connector pin corrosion, DTC C1236", "customerPartNumber": "BRK-4711" },
       "refs": [
-        { "author": "did:web:oem.example.com", "type": "https://w3id.org/dsaf/quality/v1/complaint",
+        { "stream": "7bf8f044-1fe7-528a-bcde-b4c82a45034f",
           "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
-        { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/quality/v1/part-analysis",
+        { "stream": "b4503c01-4ff2-54a8-9e1e-af1cf05e4ec0",
           "record": "a77f0e1d-2c3b-4a59-8e67-45d2c1b0a9f8", "revision": 0, "seq": 0 }
       ]
     }
@@ -483,7 +495,7 @@ seq 0, announces it, then answers the request pinned to that revision:
 
 ```json
 "response": {
-  "record": { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/quality/v1/report-8d",
+  "record": { "stream": "ee108a21-2cd4-551f-be11-a21861a5da94",
               "record": "d8770a1b-2c3d-4e5f-9a6b-7c8d9e0f1a2b", "revision": 0, "seq": 0 }
 }
 ```
@@ -669,7 +681,7 @@ DCM batch, a JSON array of events, here with one element:
       "requestId": "7b8c9d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e",
       "status": "ANSWERED",
       "response": {
-        "record": { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/pcf/v1/pcf",
+        "record": { "stream": "e5f0180b-d6c4-56dd-971d-34786df39791",
                     "record": "f3c6e9a4-7b1d-4c2e-8f5a-9b0c1d2e3f4a", "revision": 0, "seq": 1 }
       }
     }
@@ -716,7 +728,7 @@ POST https://tier1.example.com/stc/tasks/9c4a7e21-…/requests
         ]
       },
       "refs": [
-        { "author": "did:web:tier1.example.com", "type": "https://w3id.org/dsaf/pcf/v1/pcf",
+        { "stream": "e5f0180b-d6c4-56dd-971d-34786df39791",
           "record": "d1a4c7e2-8b3f-4a5c-9d6e-0f1a2b3c4d5e", "revision": 0, "seq": 0 }
       ],
       "respondBy": "2026-12-20T00:00:00Z"

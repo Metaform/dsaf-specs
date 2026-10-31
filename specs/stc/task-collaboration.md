@@ -23,14 +23,14 @@ The following terms are used to describe concepts in this specification. The ter
 - <dfn>Task Owner</dfn>: The [=Participant=] that opened a [=Task=]. The owner transitions the task after creation.
 - <dfn>Task Participant</dfn>: The counterparty of the [=Task Owner=] in a [=Task=].
 - <dfn>Stream</dfn>: An append-only sequence of [=Files=] contributed by one [=Participant=] under a [=Task=],
-  containing [=Records=] of a single type.
+  containing [=Records=] of a single type. It is identified by a `stream` identifier assigned by its publisher.
 - <dfn>File</dfn>: An immutable package of [=Record Entries=], identified by its position in a [=Stream=].
 - <dfn>Record</dfn>: A versioned data artifact contributed under a [=Task=]. A record is the unit of reference.
 - <dfn>Record Entry</dfn>: The occurrence of one [=Record=] revision in a [=File=], containing the record's state at
   that revision and its change marker.
 - <dfn>Revision</dfn>: The monotonically increasing version counter of a [=Record=] under its stable
   identifier.
-- <dfn>Pointer</dfn>: A typed reference to a [=Record=], by record identity.
+- <dfn>Pointer</dfn>: A reference to a [=Record=] by its [=Stream=] and `recordId`.
 - <dfn>Task Index</dfn>: The authoritative, append-only listing of the [=Files=] a [=Participant=] has contributed to
   a [=Task=], served by that participant.
 - <dfn>Task Request</dfn>: A resource under a [=Task=], owned by the responder, that represents a request by the
@@ -139,26 +139,29 @@ after the governing agreement ends (see [Agreement Lifecycle](#agreement-lifecyc
 
 ### Streams
 
-A [=Stream=] is the unit of contribution and delivery ordering. It is identified within a [=Task=] by the pair
-(author, `type`), where the author is the contributing [=Participant=]'s verified identity and `type` is a URI
-identifying the schema and major version of the [=Records=] it contains.
+A [=Stream=] is the unit of contribution and delivery ordering. It is identified by a `stream` identifier, a UUID
+[[rfc9562]] that the contributing [=Participant=] assigns when it creates the stream. The identifier is unique under
+the [=Task=] and MUST NOT change for the life of the stream. A stream has a `type`, a URI identifying the schema and
+major version of the [=Records=] it contains.
 
-A [=Stream=] is not created explicitly and has no state. Publishing the first [=File=] of a given `type` establishes
-the stream, and the author's [=Task Index=] lists it from that point on.
+A [=Stream=] has no state. Its publisher creates it and lists it in its [=Task Index=] from that point on, with no
+files until the first is published. A receiver learns a stream's identifier and `type` from the index, the
+[Task Summary](#task-summary), or a [`FilesAppended` event](#files-appended-event).
 
 The following rules apply:
 
 1. A [=Record=] belongs to exactly one [=Stream=]. All revisions of a record appear in the same stream.
-2. A schema change that is not backward compatible is a new `type` and therefore a new stream. An author MAY contribute
-   to the old and new stream concurrently during a migration.
-3. An author MUST NOT operate two streams with the same `type` under one task.
+2. A schema change that is not backward compatible is a new `type` and therefore a new stream. A [=Participant=] MAY
+   contribute to the old and new stream concurrently during a migration.
+3. A [=Participant=] MUST NOT operate two streams with the same `type` under one task unless a [=Use Case Profile=]
+   permits it for that `type`.
 4. Consumption is selective per stream. A [=Participant=] MAY follow or ignore any stream of its counterparty. A
    stream whose `type` the consumer does not implement is not an error. The consumer ignores streams it does not
    follow, whether encountered in the [=Task Index=] or in a [`FilesAppended` event](#files-appended-event).
 
 ### Files
 
-A [=File=] is an immutable package of [=Record Entries=], assigned a sequence number `seq` by its author:
+A [=File=] is an immutable package of [=Record Entries=], assigned a sequence number `seq` by its publisher:
 
 - `seq` MUST start at `0` for the first file of a [=Stream=] and MUST increase by exactly `1` for each subsequent
   file. The sequence has no gaps, so a missing file is detectable.
@@ -231,14 +234,14 @@ record entries. [=Pointers=] reference records, not files or record entries.
 
 #### Identity and Versioning
 
-A record is identified by a `recordId` assigned by its author, unique within its [=Stream=] and stable for the life of
+A record is identified by a `recordId` assigned by its publisher, unique within its [=Stream=] and stable for the life of
 the record. The `recordId` MUST be a UUID [[rfc9562]] in canonical lowercase form.
 
-The author's domain identifier for the record (for example, a backend claim number) MAY be contained in the envelope's
+The publisher's domain identifier for the record (for example, a backend claim number) MAY be contained in the envelope's
 `key` member (see [Record Entry Envelope](#record-entry-envelope)). The `key` is informational free text. It is
 stable across revisions and SHOULD be unique within the stream. It is never used for reference. [=Pointers=] use the
-`recordId`. Publishing the `key` is the author's choice, because an internal key can be sensitive. A published `key`
-also makes the author's domain-key mapping recoverable from its own streams.
+`recordId`. Publishing the `key` is the publisher's choice, because an internal key can be sensitive. A published `key`
+also makes the publisher's domain-key mapping recoverable from its own streams.
 
 A record is versioned by a `revision` counter. The counter is an integer that starts at `0` and increments by `1`
 for every change, including deletion. Every `ADDED` or `UPDATED` revision is a complete snapshot of the record.
@@ -258,7 +261,7 @@ Each [=Record Entry=] contains a `marker` declaring the kind of change it repres
 Within a stream, the entries of one `recordId` MUST appear in revision order across the file sequence, at most one
 entry per record per file. A receiver detecting a violation (an `ADDED` for an existing record, an `UPDATED` or
 `DELETED` for an unknown record, a revision gap, or an entry after `DELETED`) MUST treat the stream as erroneous and
-SHOULD resynchronize from the author's [=Task Index=]. How the error is surfaced between the parties is defined by
+SHOULD resynchronize from the publisher's [=Task Index=]. How the error is surfaced between the parties is defined by
 [=Dataspace Profiles=].
 
 Because every entry is self-contained, two consumption strategies are equivalent. This observation is
@@ -278,7 +281,7 @@ Every [=Record Entry=] contains the following envelope, in the slot its [packagi
 | **Optional** | - `refs`: An array of [=Pointers=] (see [Pointers](#pointers)). MUST be absent when `marker` is `DELETED`.    |
 |              | - `mediaType`: The payload's media type [[rfc2046]]. REQUIRED under archive packaging when a payload is present. Absent otherwise. |
 |              | - `payloadEntry`: The exact archive entry name of the payload (see [Packaging](#packaging)). REQUIRED under archive packaging when a payload is present. Absent otherwise. |
-|              | - `key`: The author's domain identifier for the record (see [Identity and Versioning](#identity-and-versioning)). Informational. Never used for reference. |
+|              | - `key`: The publisher's domain identifier for the record (see [Identity and Versioning](#identity-and-versioning)). Informational. Never used for reference. |
 
 ### Pointers
 
@@ -286,15 +289,14 @@ A [=Pointer=] references a [=Record=] from another record, a [=Task Request=], o
 cross-reference mechanism of this specification. Nothing references a [=File=] or a position within one.
 
 Pointers are task-scoped. A pointer MUST reference a record contributed under the same [=Task=] as the construct
-containing it. Resolution is against the referenced author's [=Task Index=] for that task. A record needed under
-another task, such as evidence for a demand raised in a different collaboration, is contributed again under that
-task.
+containing it. Resolution is against the [=Task Index=] of the party whose index lists the pointer's `stream`. A
+pointer whose `stream` is listed in neither party's index is invalid. A record needed under another task, such as
+evidence for a demand raised in a different collaboration, is contributed again under that task.
 
 |              |                                                                                                              |
 |--------------|----------------------------------------------------------------------------------------------------------------|
 | **Schema**   | [JSON Schema](./schemas/pointer.schema.json)                                                                  |
-| **Required** | - `author`: The identity of the referenced record's author (see [Identity](#identity)).                       |
-|              | - `type`: The `type` of the referenced record's [=Stream=].                                                   |
+| **Required** | - `stream`: The identifier of the [=Stream=] containing the referenced record (see [Streams](#streams)).      |
 |              | - `record`: The `recordId` of the referenced record.                                                          |
 | **Optional** | - `revision`: Pins the reference to a specific record revision. If omitted, the reference designates the record's current revision at resolution time. |
 |              | - `seq`: The `seq` of the [=File=] containing the pinned revision. MUST NOT be present without `revision`.        |
@@ -406,7 +408,7 @@ following event types are defined:
 | Event Type                      | Direction             | Purpose                                                  |
 | ------------------------------- | --------------------- | -------------------------------------------------------- |
 | `org.dsaf.stc.TaskStatus.v1`    | Owner → Participant   | Communicates the current [=Task=] state                  |
-| `org.dsaf.stc.FilesAppended.v1` | Author → Counterparty | Announces [=Files=] appended to the author's [=Streams=] |
+| `org.dsaf.stc.FilesAppended.v1` | Publisher → Counterparty | Announces [=Files=] appended to its [=Streams=] |
 | `org.dsaf.stc.RequestStatus.v1` | Responder → Requester | Communicates the terminal state of a [=Task Request=]    |
 
 [=Use Case Profiles=] MAY define additional event types (for example, a domain alert). A use case profile event that
@@ -453,7 +455,7 @@ The following is a non-normative example of a `CLOSED` notification:
       "outcome": "https://w3id.org/example/outcomes/resolved",
       "reason": "Root cause confirmed; countermeasure effective from batch 2271.",
       "refs": [
-        { "author": "did:web:supplier.example.com", "type": "https://w3id.org/example/schemas/report-8d/1",
+        { "stream": "4eacc0aa-6aec-536e-bb52-b6115e4d9bf7",
           "record": "d8770a1b-2c3d-4e5f-9a6b-7c8d9e0f1a2b", "revision": 2 }
       ]
     }
@@ -467,9 +469,9 @@ A `FilesAppended` event announces [=Files=] the sending party has appended to it
 [=Task=]. One event MAY span multiple streams. Its data is the appended [=Task Index=] entries verbatim, so applying
 the event and synchronizing from the index are the same operation.
 
-An author SHOULD push a `FilesAppended` event for every file it publishes. The event is a hint. A receiver that
+A publisher SHOULD push a `FilesAppended` event for every file it publishes. The event is a hint. A receiver that
 observes a sequence gap, an announced `seq` that is not the successor of the last file it holds, recovers via the
-author's [=Task Index=] and cannot rely on redelivery.
+publisher's [=Task Index=] and cannot rely on redelivery.
 
 The `subject` attribute of the event MUST be set to the `taskId`.
 
@@ -477,7 +479,7 @@ The `subject` attribute of the event MUST be set to the `taskId`.
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Schema**   | [JSON Schema](./schemas/files.appended.event.schema.json)                                                                                    |
 | **Required** | - `taskId`: The task the appended files belong to.                                                                                           |
-|              | - `streams`: An array of objects, each containing a stream `type` and its appended `files` as [Task Index file entries](#task-index-object). |
+|              | - `streams`: An array of objects, each containing a stream identifier `stream`, its `type`, and its appended `files` as [Task Index file entries](#task-index-object). |
 
 The following is a non-normative example:
 
@@ -494,6 +496,7 @@ The following is a non-normative example:
     "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
     "streams": [
       {
+        "stream": "8d7408f5-f096-5ae3-9beb-ace60f873b35",
         "type": "https://w3id.org/example/schemas/parts-analysis/4",
         "files": [
           { "seq": 1, "fileId": "f7c3b2a1-9d0e-4f5a-8b6c-1d2e3f4a5b6d", "createdAt": "2026-10-28T08:40:03Z",
@@ -501,6 +504,7 @@ The following is a non-normative example:
         ]
       },
       {
+        "stream": "8694dd9f-7acb-5909-aaa3-3dd99032fdd8",
         "type": "https://w3id.org/example/schemas/attachment/1",
         "files": [
           { "seq": 1, "fileId": "c4d1e2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f", "createdAt": "2026-10-28T08:40:03Z",
@@ -554,8 +558,7 @@ The following is a non-normative example of an `ANSWERED` notification:
     "status": "ANSWERED",
     "response": {
       "record": {
-        "author": "did:web:supplier.example.com",
-        "type": "https://w3id.org/example/schemas/claim-verification/1",
+        "stream": "fd2e42d8-36c8-55d3-8df9-d6c00fe0088f",
         "record": "2041fa1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b",
         "revision": 0,
         "seq": 0
@@ -701,7 +704,7 @@ Because a long-lived task accumulates file entries without bound, the endpoint s
 |-----------------|-------------------------------------------------------------------------------------|
 | **HTTP Method** | `GET`                                                                           |
 | **URL Path**    | `/tasks/:taskId/index`                                                          |
-| **Query**       | `stream` *(optional)*: a stream `type` URI. `fromSeq` *(optional, requires `stream`)*: lowest `seq` to include. `summary` *(optional)*: `true` for heads only |
+| **Query**       | `stream` *(optional)*: a stream identifier. `fromSeq` *(optional, requires `stream`)*: lowest `seq` to include. `summary` *(optional)*: `true` for heads only |
 | **Response**    | `HTTP 200` with a [Task Index object](#task-index-object) OR `HTTP 4xx Client Error` |
 
 ### Task Summary
@@ -826,9 +829,9 @@ The following is a non-normative example of a request creation body with one req
         "claimedAmount": { "value": 418.50, "currency": "EUR" }
       },
       "refs": [
-        { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/claim-data/3",
+        { "stream": "d484bd4c-e566-5c53-860f-62d19f16bd3c",
           "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 },
-        { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/attachment/1",
+        { "stream": "2d806378-8149-525a-a503-517d7f06d1a4",
           "record": "f7e6d5c4-b3a2-4918-8776-655443322110", "revision": 0, "seq": 2 }
       ],
       "respondBy": "2026-12-01T00:00:00Z"
@@ -990,8 +993,9 @@ Each stream object:
 
 |              |                                                                                                       |
 |--------------|-----------------------------------------------------------------------------------------------------------|
-| **Required** | - `type`: The stream's record schema URI (see [Streams](#streams)).                                    |
-|              | - `files`: The stream's file entries in `seq` order. In a summary response (see [Index Retrieval](#index-retrieval)) the object instead contains `head`, the stream's highest `seq`. A stream object contains exactly one of `files` and `head`. |
+| **Required** | - `stream`: The stream identifier (see [Streams](#streams)).                                           |
+|              | - `type`: The stream's record schema URI (see [Streams](#streams)).                                    |
+|              | - `files`: The stream's file entries in `seq` order, empty for a stream with no file yet. In a summary response (see [Index Retrieval](#index-retrieval)) the object instead contains `head`, the stream's highest `seq`. A stream object contains exactly one of `files` and `head`. |
 
 Each file entry:
 
@@ -1013,6 +1017,7 @@ The following is a non-normative example:
   "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
   "streams": [
     {
+      "stream": "8d7408f5-f096-5ae3-9beb-ace60f873b35",
       "type": "https://w3id.org/example/schemas/parts-analysis/4",
       "files": [
         { "seq": 0, "fileId": "33ab9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "createdAt": "2026-10-21T10:02:11Z",
@@ -1020,6 +1025,7 @@ The following is a non-normative example:
       ]
     },
     {
+      "stream": "8694dd9f-7acb-5909-aaa3-3dd99032fdd8",
       "type": "https://w3id.org/example/schemas/attachment/1",
       "files": [
         { "seq": 0, "fileId": "90ee1f2a-3b4c-4d5e-9f6a-7b8c9d0e1f2a", "createdAt": "2026-10-21T10:02:11Z",
@@ -1052,8 +1058,8 @@ The following is a non-normative example, as served by a [=Task Owner=]:
   "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
   "status": "OPEN",
   "streams": [
-    { "type": "https://w3id.org/example/schemas/parts-analysis/4", "head": 0 },
-    { "type": "https://w3id.org/example/schemas/attachment/1", "head": 1 }
+    { "stream": "8d7408f5-f096-5ae3-9beb-ace60f873b35", "type": "https://w3id.org/example/schemas/parts-analysis/4", "head": 0 },
+    { "stream": "8694dd9f-7acb-5909-aaa3-3dd99032fdd8", "type": "https://w3id.org/example/schemas/attachment/1", "head": 1 }
   ],
   "requestsHead": 7,
   "pollInterval": 900
@@ -1091,13 +1097,12 @@ The following is a non-normative example of an `ANSWERED` request:
     "claimedAmount": { "value": 418.50, "currency": "EUR" }
   },
   "refs": [
-    { "author": "did:web:oem.example.com", "type": "https://w3id.org/example/schemas/claim-data/3",
+    { "stream": "d484bd4c-e566-5c53-860f-62d19f16bd3c",
       "record": "b7e3d2c1-4a5f-4b6c-8d9e-0f1a2b3c4d5e", "revision": 1, "seq": 1 }
   ],
   "response": {
     "record": {
-      "author": "did:web:supplier.example.com",
-      "type": "https://w3id.org/example/schemas/claim-verification/1",
+      "stream": "fd2e42d8-36c8-55d3-8df9-d6c00fe0088f",
       "record": "2041fa1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b", "revision": 0, "seq": 0
     }
   }
@@ -1140,8 +1145,7 @@ The following is a non-normative example of a page of `ANSWERED` requests:
       "payload": { "claimedAmount": { "value": 418.50, "currency": "EUR" } },
       "response": {
         "record": {
-          "author": "did:web:supplier.example.com",
-          "type": "https://w3id.org/example/schemas/claim-verification/1",
+          "stream": "fd2e42d8-36c8-55d3-8df9-d6c00fe0088f",
           "record": "2041fa1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b", "revision": 0, "seq": 0
         }
       }
