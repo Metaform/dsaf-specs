@@ -3,7 +3,7 @@
   "title": "FilesAppendedEvent",
   "allOf": [
     {
-      "$ref": "./event.schema.json"
+      "$ref": "../../dcm/schemas/event.schema.json"
     },
     {
       "type": "object",

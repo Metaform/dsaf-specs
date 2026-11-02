@@ -422,9 +422,9 @@ party never updates state it owns from an inbound event.
 
 ### Task Status Event
 
-A `TaskStatus` event reports the current [=Task=] state. The [=Task Owner=] MUST push it when the task is closed and
-MAY push an `OPEN` form to re-announce an open task. The event is informational. The authoritative state is served
-by [Task Retrieval](#task-retrieval). `DECLINED` is never pushed. It is reported synchronously in the creation response.
+A `TaskStatus` event reports the current [=Task=] state. The [=Task Owner=] MUST send it when the task is closed and
+MAY send an `OPEN` form to re-announce an open task. The event is informational. The authoritative state is served
+by [Task Retrieval](#task-retrieval). `DECLINED` is never sent. It is reported synchronously in the creation response.
 
 The `subject` attribute of the event MUST be set to the `taskId`.
 
@@ -469,7 +469,7 @@ A `FilesAppended` event announces [=Files=] the sending party has appended to it
 [=Task=]. One event MAY span multiple streams. Its data is the appended [=Task Index=] entries verbatim, so applying
 the event and synchronizing from the index are the same operation.
 
-A publisher SHOULD push a `FilesAppended` event for every file it publishes. The event is a hint. A receiver that
+A publisher SHOULD send a `FilesAppended` event for every file it publishes. The event is a hint. A receiver that
 observes a sequence gap, an announced `seq` that is not the successor of the last file it holds, recovers via the
 publisher's [=Task Index=] and cannot rely on redelivery.
 
@@ -519,10 +519,10 @@ The following is a non-normative example:
 ### Request Status Event
 
 A `RequestStatus` event reports the responder's outcome of a [=Task Request=] to the requester. The responder MUST
-push it when a request reaches `ANSWERED` or `DECLINED` after the creation response. A terminal state reported
-synchronously in the creation response is not pushed. The intermediate `RECEIVED` state is never pushed. It is
+send it when a request reaches `ANSWERED` or `DECLINED` after the creation response. A terminal state reported
+synchronously in the creation response is not sent. The intermediate `RECEIVED` state is never sent. It is
 reported synchronously in the creation response and is observable at any time via
-[Request Retrieval](#request-retrieval). `CANCELLED` is never pushed, because the requester sets it.
+[Request Retrieval](#request-retrieval). `CANCELLED` is never sent, because the requester sets it.
 
 When many requests reach a terminal state together, for example because one [=File=] contains the responses to all
 of them, the responder SHOULD send their `RequestStatus` events in [[dcm]] batches. A requester that missed events
@@ -862,8 +862,8 @@ The following is a non-normative example with two demands:
 ### Request Retrieval
 
 The request retrieval endpoint returns the current state of a [=Task Request=]. The requester polls it to observe
-progress when it missed pushed `RequestStatus` events. To synchronize the states of many requests, the requester uses
-[Request Listing](#request-listing). The endpoint MUST report the same `status` as the pushed events.
+progress when it missed `RequestStatus` events. To synchronize the states of many requests, the requester uses
+[Request Listing](#request-listing). The endpoint MUST report the same `status` as the events.
 
 If the `requestId` is unknown, the responder MUST respond with `HTTP 404 Not Found`. For a request it is not the
 responder of, a party MUST respond with `HTTP 404 Not Found`.
@@ -1244,7 +1244,7 @@ A dataset's distribution MUST use the HTTP Transfer Profile defined by Data Plan
 
 An agreement on a dataset is bound to the counterparty's verified identity. This is the same identity that appears
 in an event's `source` attribute and is verified per [Security and Authorization](#security-and-authorization). All
-[=Tasks=] between two parties operate under their agreements. A party's push obligations
+[=Tasks=] between two parties operate under their agreements. A party's event obligations
 ([Protocol Events](#protocol-events)) extend to each counterparty whose dataset it holds an agreement on.
 
 ### Agreement Lifecycle
