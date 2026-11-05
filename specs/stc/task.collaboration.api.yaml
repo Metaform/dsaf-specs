@@ -48,10 +48,10 @@ paths:
         retain the binding. A `type` the receiving party does not implement,
         or that is not a task type of the agreement's use case profile, is
         not rejected. The task is created `DECLINED` with the `type` URI in
-        the error's `specifier`. The `type` is immutable. A receiving party that cannot decide at once may
-        answer `HTTP 503` with `Retry-After`. An owner that receives a `5xx`
-        response, or no response, should retry the creation with the same
-        Task object.
+        the error's `specifier`. The `type` is immutable. A receiving party
+        that cannot decide at once may answer `HTTP 503` with `Retry-After`.
+        An owner that receives a `5xx` response, or no response, should retry
+        the creation with the same Task object.
       operationId: createTask
       requestBody:
         required: true
