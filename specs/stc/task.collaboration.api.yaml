@@ -32,20 +32,23 @@ paths:
     post:
       summary: Create a Task binding
       description: |
-        Invoked by the Task Owner on the counterparty to open a Task, carrying
-        the Task object. Creation is idempotent on the `taskId`. A request
-        repeating a (counterparty, `taskId`) pair is treated as the same
-        creation and acknowledged without creating a second binding. A replay
-        matches the bound task on `taskId` and `createdAt` and gets a response
-        identical to the original, `HTTP 201` included. A bound `taskId` with
-        a different `createdAt` is a collision and is rejected with
+        Invoked by the Task Owner on the counterparty to open a Task, with
+        the Task object, including its task `type`, as the body. Creation is
+        idempotent on the `taskId`. A request repeating a (counterparty,
+        `taskId`) pair is treated as the same creation and acknowledged
+        without creating a second binding. A replay matches the bound task on
+        `taskId`, `type`, and `createdAt` and gets a response identical to the
+        original, `HTTP 201` included. A bound `taskId` with a different
+        `type` or `createdAt` is a collision and is rejected with
         `HTTP 409`. A creation whose `status` is not `OPEN` is rejected with
         `HTTP 400`. The receiving party may decline a creation it will not
         participate in. The task is then created in the `DECLINED` state and
         the response body contains the Task object with `status` `DECLINED`
         and the reasons for the decline in its `errors` array. Both parties
-        retain the binding. Task metadata is immutable. It is set at creation
-        and never updated. A receiving party that cannot decide at once may
+        retain the binding. A `type` the receiving party does not implement,
+        or that is not a task type of the agreement's use case profile, is
+        not rejected. The task is created `DECLINED` with the `type` URI in
+        the error's `specifier`. The `type` is immutable. A receiving party that cannot decide at once may
         answer `HTTP 503` with `Retry-After`. An owner that receives a `5xx`
         response, or no response, should retry the creation with the same
         Task object.
@@ -65,9 +68,9 @@ paths:
                 summary: Open a task for a quality early warning
                 value:
                   taskId: 430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17
+                  type: https://w3id.org/example/tasks/investigation/1
                   status: OPEN
                   createdAt: '2026-10-07T09:00:00Z'
-                  title: 'Early warning: braking component'
       responses:
         '201':
           description: >-
@@ -561,12 +564,17 @@ components:
       type: object
       required:
         - taskId
+        - type
         - status
         - createdAt
       additionalProperties: false
       properties:
         taskId:
           $ref: '#/components/schemas/Uuid'
+        type:
+          type: string
+          format: uri
+          minLength: 1
         status:
           type: string
           enum:
@@ -576,12 +584,6 @@ components:
         createdAt:
           type: string
           format: date-time
-        title:
-          type: string
-          minLength: 1
-        description:
-          type: string
-          minLength: 1
         errors:
           type: array
           minItems: 1

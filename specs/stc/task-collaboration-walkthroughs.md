@@ -96,10 +96,9 @@ POST https://tier1.example.com/stc/tasks
 ```json
 {
   "taskId": "430f56d3-7f41-4a7e-9f05-2d6c8b9e4a17",
+  "type": "https://w3id.org/dsaf/quality/v1/task/investigation",
   "status": "OPEN",
-  "createdAt": "2026-10-07T09:00:00Z",
-  "title": "Early warning: braking component",
-  "description": "Elevated DTC rate in model A vehicles; suspected component lot issue."
+  "createdAt": "2026-10-07T09:00:00Z"
 }
 ```
 
@@ -534,7 +533,7 @@ sequenceDiagram
     participant OEM
     participant Supplier
     Note over OEM,Supplier: 1. OEM concludes a PCF Agreement on the supplier's dataset
-    Supplier->>OEM: 1. POST /tasks (PCF 2026, OPEN)
+    Supplier->>OEM: 1. POST /tasks (generation, OPEN)
     OEM-->>Supplier: 201 Task (OPEN)
     Note over Supplier: 2. Publish PCFs A and B (pcf seq 0)
     Supplier->>OEM: 2. POST /notifications FilesAppended (pcf seq 0)
@@ -571,10 +570,9 @@ POST https://oem.example.com/stc/tasks
 ```json
 {
   "taskId": "9c4a7e21-5d3b-4f8a-a6c2-1e7b9d0f3a54",
+  "type": "https://w3id.org/dsaf/pcf/v1/task/generation",
   "status": "OPEN",
-  "createdAt": "2026-11-02T08:00:00Z",
-  "title": "PCF 2026",
-  "description": "Product carbon footprints for the 2026 reporting period."
+  "createdAt": "2026-11-02T08:00:00Z"
 }
 ```
 

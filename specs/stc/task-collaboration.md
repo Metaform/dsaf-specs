@@ -22,6 +22,8 @@ The following terms are used to describe concepts in this specification. The ter
   and requests of one collaboration are correlated.
 - <dfn>Task Owner</dfn>: The [=Participant=] that opened a [=Task=]. The owner transitions the task after creation.
 - <dfn>Task Participant</dfn>: The counterparty of the [=Task Owner=] in a [=Task=].
+- <dfn>Task Type</dfn>: A URI defined by a [=Use Case Profile=] that identifies the kind of collaboration a [=Task=]
+  represents and the rules the use case profile applies to it.
 - <dfn>Stream</dfn>: An append-only sequence of [=Files=] contributed by one [=Participant=] under a [=Task=],
   containing [=Records=] of a single type. It is identified by a `stream` identifier assigned by its publisher.
 - <dfn>File</dfn>: An immutable package of [=Record Entries=], identified by its position in a [=Stream=].
@@ -35,8 +37,8 @@ The following terms are used to describe concepts in this specification. The ter
   a [=Task=], served by that participant.
 - <dfn>Task Request</dfn>: A resource under a [=Task=], owned by the responder, that represents a request by the
   counterparty to perform an action, with observable state.
-- <dfn>Use Case Profile</dfn>: A specification built on STC that defines the record schemas, request kinds,
-  packaging formats, and additional domain event types of a domain.
+- <dfn>Use Case Profile</dfn>: A specification built on STC that defines the task types, record schemas, request
+  kinds, packaging formats, and additional domain event types of a domain.
 - <dfn>Dataspace Profile</dfn>: A specification that applies one or more [=Use Case Profiles=] to the rules of a
   dataspace.
 
@@ -75,6 +77,26 @@ Either party can open a [=Task=] by invoking the counterparty's
 does not want to participate declines the task at creation (see [Task State Machine](#task-state-machine)). A
 counterparty that accepted the task but will not act on a particular demand declines that [=Task Request=]. Only the
 [=Task Owner=] can close the task.
+
+#### Task Type
+
+Every [=Task=] has a `type`, a [=Task Type=] URI defined by the [=Use Case Profile=] of the agreement under which the
+task is opened (see [Dataset Definition](#dataset-definition)). The type identifies the kind of collaboration the task
+represents, for example the investigation of one quality issue or a standing task that spans a relationship. A use case
+profile defines one or more task types and the rules that apply to each (see [Use Case Profiles](#use-case-profiles)).
+
+The [=Task Owner=] sets the `type` at creation. The `type` is immutable for the life of the task.
+
+A receiving party that does not implement the `type`, or for which the `type` is not a task type of the agreement's use
+case profile, MUST NOT reject the creation. It MUST create the task in the `DECLINED` state, with the `type` URI in the
+error's `specifier` (see [Task Creation](#task-creation)). An unsupported task type therefore remains correlatable and
+distinguishable from a business decline.
+
+A task type does not change the protocol. Every task has the same state machine, endpoints, and events. The rules of
+a task type constrain what the parties do under the task. A [=Task Request=] whose `kind` the task type does not
+permit is declined as an unsupported kind (see [Request Creation](#request-creation)). A consumer ignores a stream
+whose `type` the task type does not provide for, as it ignores any stream it does not follow (see
+[Streams](#streams)).
 
 #### Task State Machine
 
@@ -126,8 +148,6 @@ human-readable `reason`, and [=Pointers=] to the records that conclude the colla
 Outcomes do not add states to the task. Every closure ends in the single `CLOSED` state, and the `outcome` value on the
 `closure` record distinguishes how it concluded (for example, resolved, aborted, or superseded). The outcome values are
 defined by [=Use Case Profiles=].
-
-Task metadata (`title`, `description`) is immutable. It is set at creation and never updated.
 
 #### Task Retention
 
@@ -641,14 +661,14 @@ declined [=Task Request=], a `DECLINED` [=Task=], or a status event.
 ### Task Creation
 
 The `tasks` endpoint creates the receiving party's binding to a new [=Task=]. It is invoked by the [=Task Owner=] on
-the counterparty. The request body contains the [Task object](#task-object). A creation whose `status` is not
-`OPEN` MUST be rejected with `HTTP 400 Bad Request`.
+the counterparty. The request body contains the [Task object](#task-object), including its `type` (see
+[Task Type](#task-type)). A creation whose `status` is not `OPEN` MUST be rejected with `HTTP 400 Bad Request`.
 
 Creation is idempotent on the `taskId`. A request repeating a (counterparty, `taskId`) pair MUST be treated as the
 same creation and acknowledged without creating a second binding. A replay is a creation whose Task object matches
-the bound task on `taskId` and `createdAt`. The response to a replay is identical to the original response,
-`HTTP 201` included. A creation repeating a bound `taskId` with a different `createdAt` is a collision with a
-different task and MUST be rejected with `HTTP 409 Conflict`.
+the bound task on `taskId`, `type`, and `createdAt`. The response to a replay is identical to the original response,
+`HTTP 201` included. A creation repeating a bound `taskId` with a different `type` or `createdAt` is a collision
+with a different task and MUST be rejected with `HTTP 409 Conflict`.
 
 A receiving party that cannot decide on a creation at once, for example because it waits for a local admission
 decision, MAY answer `HTTP 503 Service Unavailable` with a `Retry-After` header. An owner that receives a `5xx`
@@ -658,7 +678,7 @@ Because creation is idempotent, a retry never creates a second binding.
 The receiving party MAY decline a task it will not participate in. The task is then created in the `DECLINED`
 state (see [Task State Machine](#task-state-machine)), and both parties retain the binding. The creation response
 contains the [Task object](#task-object) with `status` `DECLINED` and the reasons for the decline in its `errors`
-array. 
+array. A creation with an unsupported `type` is declined this way (see [Task Type](#task-type)).
 
 |                 |                                                                                                                     |
 | --------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -800,9 +820,9 @@ order of the submitted request bodies, each with its assigned `requestId` and a 
 current state. A responder that declines a request immediately still creates it, and its Request object has `status`
 `DECLINED`. The synchronous `200` is the receipt of the demands.
 
-A structurally valid request body whose `kind` the responder does not implement MUST NOT be rejected. The responder
-MUST create the request and decline it, with the unsupported `kind` URI in the error's `specifier`, and the call is
-not invalidated. An unsupported-kind refusal therefore remains correlatable and distinguishable from a business
+A structurally valid request body whose `kind` the responder does not implement, or whose `kind` the task's
+[=Task Type=] does not permit, MUST NOT be rejected. The responder MUST create the request and decline it, with the
+unsupported `kind` URI in the error's `specifier`, and the call is not invalidated. An unsupported-kind refusal therefore remains correlatable and distinguishable from a business
 decline. `HTTP 400` is reserved for bodies that violate this specification's request schema. The payload of an
 unimplemented kind is retained as submitted.
 
@@ -962,11 +982,10 @@ An event referencing a `taskId` for which the receiver holds no binding MUST be 
 |--------------|-----------------------------------------------------------------------------------------------------------|
 | **Schema**   | [JSON Schema](./schemas/task.schema.json)                                                              |
 | **Required** | - `taskId`: Unique identifier of the task. MUST be a UUID [[rfc9562]].                                 |
+|              | - `type`: The [=Task Type=] URI (see [Task Type](#task-type)). Set at creation and immutable.          |
 |              | - `status`: One of `OPEN`, `DECLINED`, `CLOSED`.                                                       |
 |              | - `createdAt`: [[rfc3339]] timestamp of task creation.                                                 |
-| **Optional** | - `title`: A short human-readable name.                                                                |
-|              | - `description`: A human-readable statement of the collaboration's purpose.                            |
-|              | - `errors`: An array of [error objects](#error-object). MUST be present and non-empty when `status` is `DECLINED` and absent otherwise. |
+| **Optional** | - `errors`: An array of [error objects](#error-object). MUST be present and non-empty when `status` is `DECLINED` and absent otherwise. |
 |              | - `closure`: The closure record (see below). MUST be present when `status` is `CLOSED` and absent otherwise. |
 
 The `closure` object:
@@ -1158,22 +1177,28 @@ The following is a non-normative example of a page of `ANSWERED` requests:
 
 A [=Use Case Profile=] applies this protocol to a domain. A use case profile MUST define:
 
-1. The stream `type` URIs it introduces, each with a JSON schema (or equivalent) for the record payload and its
+1. The [=Task Type=] URIs it introduces, at least one. For each task type, the use case profile defines:
+   - which party may open a task of the type,
+   - the stream types each party contributes under it,
+   - the request kinds that may be submitted under it, and by which party,
+   - the closure `outcome` values and the decline reasons that apply to it,
+   - how many tasks of the type may be open between two parties at the same time.
+2. The stream `type` URIs it introduces, each with a JSON schema (or equivalent) for the record payload and its
    [packaging](#packaging): the exact file format as a media type, and the envelope mapping it follows.
-2. The [=Task Request=] `kind` URIs it introduces, each with a schema for the request payload and the expected
+3. The [=Task Request=] `kind` URIs it introduces, each with a schema for the request payload and the expected
    response record `type`.
-3. Any additional event types, following the rules in [Protocol Events](#protocol-events).
-4. A conformance URI identifying the use case profile and its major version, declared by the dataset that offers the
+4. Any additional event types, following the rules in [Protocol Events](#protocol-events).
+5. A conformance URI identifying the use case profile and its major version, declared by the dataset that offers the
    API for the use case profile (see [Dataset Definition](#dataset-definition)).
-5. The closure `outcome` and the decline reason a party uses when its agreement ends (see
+6. For each task type, the closure `outcome` and the decline reason a party uses when its agreement ends (see
    [Agreement Lifecycle](#agreement-lifecycle)).
 
 A use case profile MAY additionally define retention and deletion obligations keyed on task closure, deadline
-consequences for `respondBy`, the consequences of a request cancellation, and constraints on which party may open tasks
-or submit particular request kinds.
+consequences for `respondBy`, and the consequences of a request cancellation.
 
 Use case profiles version their schemas independently of this specification. A record schema's major version is part of
-the stream `type`, so a breaking schema change produces a new stream rather than a new protocol version.
+the stream `type`, so a breaking schema change produces a new stream rather than a new protocol version. Likewise, a
+change to the rules of a task type that is not backward compatible produces a new task type.
 
 ## Dataspace Profiles
 
@@ -1182,7 +1207,8 @@ profile it names, together with the minor version it covers, a dataspace profile
 
 - replace the file format of a stream type, including its media type and, under tabular packaging, its columns,
 - add fields to the records of a stream type,
-- restrict records and request payloads to a subset of those the use case profile allows.
+- restrict records and request payloads to a subset of those the use case profile allows,
+- restrict the task types of the use case profile to a subset.
 
 A dataspace profile MUST represent every field of the use case profile version it covers, MUST state each
 restriction, and MUST NOT change the meaning of a field defined by the use case profile. Fields it adds are part of
@@ -1233,9 +1259,10 @@ the counterparty's. The pair of agreements constitutes the communication relatio
 case profile are opened. The usage policy attached to each agreement defines the participation terms, including any
 retention obligations keyed on task closure.
 
-The datasets make the supported use case profiles, and with them the stream types, request kinds, and event types,
-discoverable from the catalog. An unimplemented `kind` is still answered per [Request Creation](#request-creation),
-and unknown stream and event types are ignored per [Streams](#streams) and [Notifications](#notifications).
+The datasets make the supported use case profiles, and with them the task types, stream types, request kinds, and
+event types, discoverable from the catalog. An unsupported task `type` is still answered per
+[Task Creation](#task-creation), an unimplemented `kind` per [Request Creation](#request-creation), and unknown stream
+and event types are ignored per [Streams](#streams) and [Notifications](#notifications).
 
 A dataset's distribution MUST use the HTTP Transfer Profile defined by Data Plane Signaling [[dps-http]] as its
 `dct:format` (pull direction).

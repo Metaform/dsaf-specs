@@ -4,6 +4,7 @@
   "type": "object",
   "required": [
     "taskId",
+    "type",
     "status",
     "createdAt"
   ],
@@ -11,6 +12,11 @@
   "properties": {
     "taskId": {
       "$ref": "./common.schema.json#/definitions/Uuid"
+    },
+    "type": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1
     },
     "status": {
       "type": "string",
@@ -23,14 +29,6 @@
     "createdAt": {
       "type": "string",
       "format": "date-time"
-    },
-    "title": {
-      "type": "string",
-      "minLength": 1
-    },
-    "description": {
-      "type": "string",
-      "minLength": 1
     },
     "errors": {
       "type": "array",
